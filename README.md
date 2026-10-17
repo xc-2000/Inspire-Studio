@@ -6,6 +6,7 @@ AI 图片、视频、画布 Agent、电商创作与多平台发布工作台。
 ## 仓库内容
 
 - `web/`：Next.js 前端、页面样式、必要的图标、字体和入口配图。
+- `web/public/homepage/originals/`：25 个首页展示视频及对应封面，随源码一起部署；后台尚未配置展示内容时自动使用这些素材。
 - `server/`：Java 21 / Spring Boot 后端、表结构迁移和系统提示词。
 - `newapi/`：New API 视频适配插件和媒体上传辅助服务。
 - `publisher-service/`：多平台发布服务和相关第三方适配代码。

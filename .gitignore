@@ -57,9 +57,13 @@ playwright-report/
 /web/public/prompts/
 /web/public/styles/
 /web/public/open-drama/
-/web/public/homepage/originals/
 /web/public/homepage/showreel/
 /web/public/images/wechat_me.png
+
+# Bundled homepage showcase assets
+/web/public/homepage/originals/*
+!/web/public/homepage/originals/*.mp4
+!/web/public/homepage/originals/*.jpg
 
 # Dependencies and build output
 node_modules/
