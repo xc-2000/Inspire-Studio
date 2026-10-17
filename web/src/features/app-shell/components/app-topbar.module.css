@@ -1,0 +1,11 @@
+.header { position: relative; z-index: 30; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; height: 52px; flex-shrink: 0; padding: 0 20px; border-bottom: 1px solid var(--studio-line); background: var(--studio-surface); }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brandLink { display: inline-flex; align-items: center; gap: 8px; color: var(--studio-ink); white-space: nowrap; font-size: 13px; font-weight: 650; letter-spacing: -.3px; }
+.actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
+.iconButton { display: inline-flex; position: relative; flex-shrink: 0; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; color: var(--studio-muted); transition: background .15s, color .15s; cursor: pointer; }
+.iconButton:hover { background: var(--studio-surface-hover); color: var(--studio-ink); }
+.unread { position: absolute; right: 7px; top: 5px; width: 5px; height: 5px; border-radius: 50%; background: var(--studio-action); box-shadow: 0 0 0 2px var(--studio-surface); }
+.header :is(button,a):focus-visible { outline: 2px solid var(--studio-action); outline-offset: 2px; }
+@media (max-width: 1023px) { .header { grid-template-columns: minmax(0, 1fr) auto; gap: 16px; padding-inline: 14px; } }
+@media (max-width: 639px) { .header { display: flex; gap: 8px; height: 52px; padding-inline: 10px; } .brand { flex: 1; gap: 4px; } .brandLink { font-size: 11px; gap: 5px; } .actions { gap: 0; } .theme { display: none; } }
+@media (prefers-reduced-motion: reduce) { .header * { transition: none; } }

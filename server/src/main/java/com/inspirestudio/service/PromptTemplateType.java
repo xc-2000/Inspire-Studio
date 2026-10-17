@@ -1,0 +1,28 @@
+package com.inspirestudio.service;
+
+/**
+ * AI系统提示词模板类型。
+ *
+ * @date     2026-07-17 00:00
+ */
+public enum PromptTemplateType {
+
+    /** 图片提示词优化模板 */
+    OPTIMIZATION_IMAGE,
+    /** 视频提示词优化模板 */
+    OPTIMIZATION_VIDEO,
+    /** 主Agent模板 */
+    AGENT_MAIN,
+    /** 主Agent失败恢复模板 */
+    AGENT_RECOVERY,
+    /** 图片生成Agent模板 */
+    AGENT_IMAGE,
+    /** 视频生成Agent模板 */
+    AGENT_VIDEO,
+    /** 画布Agent模板 */
+    AGENT_CANVAS,
+    /** 分镜脚本Agent模板 */
+    AGENT_STORYBOARD,
+    /** 分镜资产图片提示词模板 */
+    IMAGE_STORYBOARD_ASSET
+}

@@ -1,0 +1,68 @@
+.workspace { --creation-gap: clamp(12px, 1.25vw, 24px); }
+.header { min-height: 68px; padding: 12px var(--studio-content-gutter); }
+.layout { gap: var(--creation-gap); padding: 16px var(--studio-content-gutter); }
+.workspace .conversationPanel { border-radius: 16px; background: var(--studio-surface); box-shadow: none; }
+.workspace .stage { border-radius: 18px; background: var(--studio-page); box-shadow: none; }
+.headerIcon { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--studio-line); border-radius: 11px; color: var(--studio-action); background: var(--studio-surface); }
+.conversationRow { margin-bottom: 4px; border-radius: 12px; }
+.conversationPreview, .conversationPreview > *, .conversationPreview img { border-radius: 9px !important; }
+.conversationPreview { border: 1px solid var(--studio-line); }
+.empty { display: flex; flex-direction: column; justify-content: center; min-height: 100%; padding: clamp(24px, 4vh, 56px) clamp(16px, 3vw, 52px); }
+.emptyIntro { margin: 0 auto; text-align: center; }
+.emptyMark { display: inline-grid; place-items: center; width: 52px; height: 52px; margin-bottom: 16px; color: var(--studio-action); background: var(--studio-primary-soft); border: 1px solid var(--studio-primary-line); border-radius: 17px; box-shadow: 0 4px 16px color-mix(in srgb, var(--studio-action) 5%, transparent); }
+.eyebrow { margin: 0 0 10px; color: var(--studio-faint); font-size: 10px; font-weight: 600; letter-spacing: .2em; }
+.empty h2 { margin: 0; font-size: clamp(23px, 2vw, 30px); line-height: 1.3; font-weight: 600; letter-spacing: -.04em; color: var(--studio-ink); }
+.description { margin: 12px auto 0; max-width: 420px; color: var(--studio-muted); font-size: 13px; line-height: 1.9; text-wrap: pretty; }
+.examples { width: 100%; max-width: 1060px; margin: clamp(24px, 4vh, 44px) auto 0; }
+.exampleHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; color: var(--studio-muted); font-size: 11px; }
+.exampleHeading > span:first-child { display: inline-flex; align-items: center; gap: 7px; }
+.exampleHeading > span:last-child { color: var(--studio-faint); font-size: 10px; }
+.exampleGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.example { display: flex; flex-direction: column; min-width: 0; gap: 11px; padding: 17px; border: 1px solid var(--studio-line); border-radius: 14px; background: var(--studio-surface); text-align: left; transition: background .18s, border-color .18s, transform .18s; }
+.example:hover { border-color: var(--studio-primary-line); background: var(--studio-surface-hover); transform: translateY(-2px); }
+.example:focus-visible { outline: 2px solid var(--studio-action); outline-offset: 3px; }
+.exampleTop { display: flex; justify-content: space-between; align-items: center; }
+.exampleIcon { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--studio-line); border-radius: 10px; color: var(--studio-muted); background: var(--studio-page); }
+.exampleArrow { color: var(--studio-faint); transition: color .18s; }
+.example:hover .exampleArrow { color: var(--studio-action); }
+.example strong { font-size: 13px; font-weight: 500; color: var(--studio-ink); }
+.example small { color: var(--studio-muted); font-size: 11px; line-height: 1.7; }
+.workspace .stage :global(.creation-composer-band) { padding: 12px 20px 20px !important; background: transparent; }
+.workspace .stage :global(.creation-composer-tray) { border: 1px solid var(--studio-line-strong); border-radius: 16px; background: var(--studio-surface); padding: 13px 16px 11px; box-shadow: 0 8px 28px #0000000a; }
+.workspace .stage :global(.creation-composer-tray):focus-within { border-color: var(--studio-action); box-shadow: 0 0 0 3px var(--studio-primary-soft); }
+.workspace .stage :global(.creation-composer-head) { margin: 0 0 7px; padding: 0; border: 0; background: transparent; min-height: 14px; }
+.workspace .stage :global(.creation-composer-head) > span { font-size: 10px; color: var(--studio-faint); }
+.workspace .stage :global(.creation-composer-head) > strong { font-size: 11px; font-weight: 500; color: var(--studio-muted); }
+.workspace .stage :global(.creation-composer-input-shell) { min-height: 58px; }
+.workspace .stage :global(.creation-composer-toolbar) { margin: 9px 0 0; padding: 10px 0 0; border-top: 1px solid var(--studio-line); background: transparent; }
+.workspace .stage :global(.creation-composer-action.ant-btn) { color: var(--studio-muted); padding-inline: 9px !important; }
+.workspace .stage :global(.creation-composer-action.ant-btn):hover { color: var(--studio-ink); background: var(--studio-surface-hover); }
+@media (min-width: 1024px) { .layout { grid-template-columns: 248px minmax(0, 1fr); } }
+@media (min-width: 1700px) { .layout { grid-template-columns: 276px minmax(0, 1fr); } }
+@media (min-width: 768px) and (max-height: 820px) {
+    .empty { padding: 18px 28px; }
+    .emptyMark { display: none; }
+    .eyebrow { margin-bottom: 7px; }
+    .empty h2 { font-size: 24px; }
+    .description { max-width: 560px; margin-top: 8px; font-size: 12px; line-height: 1.7; }
+    .examples { margin-top: 22px; }
+    .exampleHeading { margin-bottom: 9px; }
+    .example { padding: 13px; gap: 8px; }
+    .exampleIcon { width: 28px; height: 28px; border-radius: 8px; }
+}
+@media (max-width: 767px) {
+    .header { min-height: 62px; }
+    .layout { padding: 10px; }
+    .empty { padding: 18px 16px; }
+    .emptyMark { width: 32px; height: 32px; border-radius: 10px; margin-bottom: 10px; }
+    .eyebrow, .description { display: none; }
+    .exampleGrid { grid-template-columns: 1fr; gap: 8px; }
+    .example { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 2px 12px; padding: 10px 12px; }
+    .exampleTop { grid-row: span 2; }
+    .exampleArrow { display: none; }
+    .exampleHeading > span:last-child { display: none; }
+    .examples { margin-top: 18px; }
+    .workspace .stage :global(.creation-composer-band) { padding: 8px 10px 10px !important; }
+    .workspace .stage :global(.creation-composer-tray) { padding: 10px 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .example, .exampleArrow { transition: none; } .example:hover { transform: none; } }

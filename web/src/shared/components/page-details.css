@@ -1,0 +1,86 @@
+.studio-icon-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    vertical-align: middle;
+}
+.studio-label-glyph { display: inline-flex; flex-shrink: 0; color: var(--studio-muted); }
+.studio-label-glyph > svg { width: 16px; height: 16px; stroke-width: 1.7; }
+.studio-empty-glyph {
+    display: inline-grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    margin-bottom: 12px;
+    border: 1px solid var(--studio-line);
+    border-radius: 16px;
+    color: var(--studio-muted);
+    background: var(--studio-surface-raised);
+}
+.studio-empty-glyph > svg { width: 23px; height: 23px; stroke-width: 1.5; }
+.studio-section-heading { margin: 0; font-size: 15px; font-weight: 600; color: var(--studio-ink); }
+.studio-section-heading .studio-label-glyph { color: var(--studio-action); }
+.studio-content-page .studio-toolbar {
+    border-radius: 12px;
+    background: var(--studio-surface);
+    box-shadow: none;
+}
+.studio-content-page .ant-btn .ant-btn-icon > svg { stroke-width: 1.7; }
+.studio-content-page :is(.ant-input-prefix, .ant-select-prefix) > svg { width: 15px; height: 15px; color: var(--studio-muted); stroke-width: 1.7; }
+.studio-content-page .ant-tabs-tab .studio-icon-label { gap: 7px; }
+.studio-content-page .ant-tabs-tab-active .studio-label-glyph { color: var(--studio-action); }
+.studio-content-page .ant-tabs-tab .studio-label-glyph > svg { width: 15px; height: 15px; }
+.studio-data-table { min-width: 0; overflow: hidden; border: 1px solid var(--studio-line); border-radius: 14px; background: var(--studio-surface); }
+.studio-data-table .ant-table { background: transparent; }
+.studio-data-table .ant-table-thead > tr > th { color: var(--studio-muted); font-size: 12px; font-weight: 500; background: var(--studio-surface-raised); }
+.studio-data-table .ant-table-tbody > tr:not(.ant-table-measure-row) > td { padding-block: 16px; }
+.studio-data-table .ant-empty { padding-block: 20px; }
+.studio-data-table .ant-empty-description { color: var(--studio-muted); font-size: 13px; }
+.studio-account-panel { min-width: 0; padding: 24px; border: 1px solid var(--studio-line); border-radius: 16px; background: var(--studio-surface); }
+.studio-account-panel .ant-descriptions-item-label { color: var(--studio-muted); font-size: 12px; }
+.studio-account-panel .ant-descriptions-item-content { color: var(--studio-text); font-size: 12px; }
+.studio-account-panel .ant-form-item-label > label { font-size: 12px; }
+.studio-account-grid { display: grid; align-items: start; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 20px; }
+.studio-account-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+.studio-account-form-grid .ant-form-item { margin-bottom: 0; }
+.studio-asset-filters { display: flex; flex-direction: column; gap: 12px; }
+.studio-asset-categories { display: flex; min-width: 0; gap: 4px; overflow-x: auto; padding-bottom: 2px; }
+.studio-asset-filter-fields { display: grid; grid-template-columns: minmax(0, 1fr) 180px 150px; gap: 10px; padding-top: 12px; border-top: 1px solid var(--studio-line); }
+.studio-asset-category { display: inline-flex; align-items: center; flex-shrink: 0; gap: 7px; padding: 8px 10px; border-radius: 8px; font-size: 12px; white-space: nowrap; color: var(--studio-muted); transition: background .15s, color .15s; }
+.studio-asset-category > svg { width: 15px; height: 15px; stroke-width: 1.7; }
+.studio-asset-category[aria-pressed="true"] { color: var(--studio-action); background: var(--studio-primary-soft); }
+.studio-asset-category:hover { color: var(--studio-ink); background: var(--studio-surface-hover); }
+.studio-asset-category:focus-visible { outline: 2px solid var(--studio-action); outline-offset: -2px; }
+.studio-asset-category-count { padding: 1px 5px; border-radius: 4px; font-size: 10px; font-variant-numeric: tabular-nums; background: var(--studio-surface-raised); }
+.studio-user-filters { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.studio-user-filter-fields { display: grid; flex: 1; min-width: 0; grid-template-columns: minmax(180px,1fr) 110px 120px 110px; gap: 10px; }
+.studio-user-filter-fields > * { width: 100%; min-width: 0; max-width: none; }
+.studio-user-filter-fields > .ant-picker { grid-column: span 2; }
+.studio-admin-tabs.ant-tabs > .ant-tabs-nav { margin-bottom: 20px; }
+.studio-admin-tabs.ant-tabs > .ant-tabs-nav .ant-tabs-tab { padding-block: 16px; font-size: 12px; }
+.studio-admin-tabs > :is(.ant-tabs-content-holder,.ant-tabs-body-holder) { padding-right: 4px; }
+.studio-redeem-balance { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; overflow-wrap: anywhere; }
+.studio-credit-card-inputs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 100%; }
+.studio-credit-card-inputs > .ant-input-number-group-wrapper { width: 170px; max-width: 100%; }
+@media (min-width: 1280px) {
+    .studio-user-filter-fields { grid-template-columns: minmax(180px, 1fr) 140px 110px 100px 230px; }
+    .studio-user-filter-fields > .ant-picker { grid-column: auto; }
+}
+@media (max-width: 1023px) {
+    .studio-account-grid { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 639px) {
+    .studio-credit-card-inputs { display: grid; grid-template-columns: minmax(0,1fr); width: 100%; }
+    .studio-credit-card-inputs > .ant-input-number-group-wrapper { width: 100%; }
+    .studio-user-stats .studio-icon-label { flex-direction: column; align-items: flex-start; gap: 5px; font-size: 11px; }
+    .studio-account-panel { padding: 18px; }
+    .studio-account-form-grid { grid-template-columns: minmax(0,1fr); }
+    .studio-asset-filter-fields { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+    .studio-asset-filter-fields > :first-child { grid-column: 1 / -1; }
+    .studio-asset-category { min-height: 40px; }
+    .studio-user-filter-fields { flex-basis: 100%; grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .studio-user-filter-fields > :first-child { grid-column: 1 / -1; }
+    .studio-user-filter-fields > .ant-picker { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) { .studio-asset-category { transition: none; } }

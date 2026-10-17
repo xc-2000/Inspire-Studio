@@ -1,0 +1,316 @@
+package com.inspirestudio.dto;
+
+import com.alibaba.fastjson2.JSONObject;
+import jakarta.validation.constraints.NotBlank;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * @title        AiTaskDtos.java
+ * @description  AI任务DTO
+ * @createTime   2026-06-24 11:02:00
+ */
+public final class AiTaskDtos {
+
+    /**
+     * 禁止实例化
+     */
+    private AiTaskDtos() {
+    }
+
+    /**
+     * 任务媒体引用
+     *
+     * @param id String 引用ID
+     * @param name String 引用名称
+     * @param mimeType String MIME类型
+     * @param storageKey String 后端媒体存储键
+     * @param url String 公网URL或远程URL
+     * @param role String 媒体角色
+     * @param trimStartMs Integer 裁剪开始时间（毫秒）
+     * @param trimEndMs Integer 裁剪结束时间（毫秒）
+     */
+    public record AiTaskMediaReference(String id, String name, String mimeType, String storageKey, String url, String role,
+                                       Integer trimStartMs, Integer trimEndMs) {
+
+        /**
+         * 保留媒体角色扩展前的构造方式。
+         *
+         * @param id String 媒体标识
+         * @param name String 媒体名称
+         * @param mimeType String MIME类型
+         * @param storageKey String 存储键
+         * @param url String 访问地址
+         */
+        public AiTaskMediaReference(String id, String name, String mimeType, String storageKey, String url) {
+            this(id, name, mimeType, storageKey, url, null, null, null);
+        }
+
+        /** 保留带媒体角色的构造方式。 */
+        public AiTaskMediaReference(String id, String name, String mimeType, String storageKey, String url, String role) {
+            this(id, name, mimeType, storageKey, url, role, null, null);
+        }
+    }
+
+    /**
+     * 创建AI生成任务请求
+     *
+     * @param taskType String 任务类型
+     * @param prompt String 提示词
+     * @param model String 模型名称
+     * @param parameters Map<String, Object> 参数
+     * @param references List<AiTaskMediaReference> 图片引用
+     * @param audioReferences List<AiTaskMediaReference> 音频引用
+     * @param videoReferences List<AiTaskMediaReference> 视频引用
+     * @param generationSource String 生成来源
+     * @param videoGenerationMode String 视频生成模式
+     */
+    public record CreateAiTaskRequest(@NotBlank(message = "任务类型不能为空") String taskType,
+                                      @NotBlank(message = "提示词不能为空") String prompt,
+                                      String model,
+                                      Map<String, Object> parameters,
+                                      List<AiTaskMediaReference> references,
+                                      List<AiTaskMediaReference> videoReferences,
+                                      String generationSource,
+                                      List<Long> generationStyleIds,
+                                      List<GenerationStyleDtos.GenerationStyleSnapshot> generationStyleSnapshots,
+                                      String videoGenerationMode,
+                                      List<AiTaskMediaReference> audioReferences) {
+        /**
+         * 为不携带音频的内部调用创建任务请求。
+         * @param taskType String 任务类型
+         * @param prompt String 用户提示词
+         * @param model String 模型标识
+         * @param parameters Map 生成参数
+         * @param references List 图片引用
+         * @param videoReferences List 视频引用
+         * @param generationSource String 生成来源
+         * @param generationStyleIds List 风格标识
+         * @param generationStyleSnapshots List 风格快照
+         * @param videoGenerationMode String 视频生成模式
+         */
+        public CreateAiTaskRequest(String taskType, String prompt, String model, Map<String, Object> parameters,
+                                   List<AiTaskMediaReference> references, List<AiTaskMediaReference> videoReferences,
+                                   String generationSource, List<Long> generationStyleIds,
+                                   List<GenerationStyleDtos.GenerationStyleSnapshot> generationStyleSnapshots, String videoGenerationMode) {
+            this(taskType, prompt, model, parameters, references, videoReferences, generationSource, generationStyleIds, generationStyleSnapshots, videoGenerationMode, null);
+        }
+        /** 保持既有调用方不指定视频生成模式。 */
+        public CreateAiTaskRequest(String taskType, String prompt, String model, Map<String, Object> parameters,
+                                   List<AiTaskMediaReference> references, List<AiTaskMediaReference> videoReferences,
+                                   String generationSource, List<Long> generationStyleIds,
+                                   List<GenerationStyleDtos.GenerationStyleSnapshot> generationStyleSnapshots) {
+            this(taskType, prompt, model, parameters, references, videoReferences, generationSource,
+                    generationStyleIds, generationStyleSnapshots, null);
+        }
+
+        public CreateAiTaskRequest(String taskType, String prompt, String model, Map<String, Object> parameters,
+                                   List<AiTaskMediaReference> references, List<AiTaskMediaReference> videoReferences,
+                                   String generationSource) {
+            this(taskType, prompt, model, parameters, references, videoReferences, generationSource, null, null, null);
+        }
+    }
+
+    /**
+     * AI任务ID请求
+     *
+     * @param taskId String 任务ID
+     */
+    public record AiTaskIdRequest(@NotBlank(message = "任务ID不能为空") String taskId) {
+    }
+
+    /**
+     * AI任务响应
+     *
+     * @param id String 任务ID
+     * @param taskType String 任务类型
+     * @param model String 模型名称
+     * @param provider String 渠道名称
+     * @param status String 任务状态
+     * @param progress Integer 进度
+     * @param requestData JSONObject 请求摘要
+     * @param resultData JSONObject 结果数据
+     * @param errorMessage String 错误信息
+     * @param startedAt String 开始时间
+     * @param completedAt String 完成时间
+     * @param createdAt String 创建时间
+     * @param updatedAt String 更新时间
+     */
+    public record AiGenerationTaskResponse(String id,
+                                           String taskType,
+                                           String model,
+                                           String provider,
+                                           String status,
+                                           Integer progress,
+                                           JSONObject requestData,
+                                           JSONObject resultData,
+                                           String errorMessage,
+                                           String startedAt,
+                                           String completedAt,
+                                           String createdAt,
+                                           String updatedAt) {
+    }
+
+    /**
+     * AI任务列表响应
+     *
+     * @param tasks List<AiGenerationTaskResponse> 任务列表
+     */
+    public record AiTaskListResponse(List<AiGenerationTaskResponse> tasks) {
+    }
+
+    /** 视频工作流报价请求。 */
+    public record VideoWorkflowQuoteRequest(String workflowType, String model, String imageModel,
+                                            String resolution, String seconds, String stage) {
+
+        /**
+         * 兼容未指定报价阶段的调用，默认计算完整工作流报价。
+         *
+         * @param workflowType String 工作流类型
+         * @param model String 视频模型
+         * @param imageModel String 图片模型
+         * @param resolution String 视频分辨率
+         * @param seconds String 视频时长
+         */
+        public VideoWorkflowQuoteRequest(String workflowType, String model, String imageModel,
+                                        String resolution, String seconds) {
+            this(workflowType, model, imageModel, resolution, seconds, null);
+        }
+    }
+
+    /** 视频工作流阶段报价。 */
+    public record VideoWorkflowStageQuote(String role, String displayName, String taskType, String model,
+                                          Integer taskCount, Integer credits, String videoGenerationMode) {
+
+        /**
+         * 创建不适用视频模式的阶段报价，保留非视频阶段的原有构造方式。
+         *
+         * @param role String 阶段角色
+         * @param displayName String 阶段展示名称
+         * @param taskType String 阶段任务类型
+         * @param model String 阶段模型
+         * @param taskCount Integer 阶段任务数量
+         * @param credits Integer 阶段积分
+         */
+        public VideoWorkflowStageQuote(String role, String displayName, String taskType, String model,
+                                       Integer taskCount, Integer credits) {
+            this(role, displayName, taskType, model, taskCount, credits, null);
+        }
+    }
+
+    /** 视频工作流报价响应。 */
+    public record VideoWorkflowQuoteResponse(Boolean available, String workflowType,
+                                             List<VideoWorkflowStageQuote> stages, Integer credits,
+                                             String reason, List<String> requiredCapabilities) {
+    }
+
+    /**
+     * AI任务SSE事件
+     *
+     * @param type String 事件类型，取值为task、ping、text-delta、credit-balance
+     * @param task AiGenerationTaskResponse 任务信息，text-delta事件携带精简快照用于关联任务
+     * @param delta String 流式文本增量片段，仅text-delta事件使用，其它事件为null
+     * @param creditBalance Integer 可用积分，仅credit-balance事件使用，其它事件为null
+     */
+    public record AiTaskEvent(String type, AiGenerationTaskResponse task, String delta, Integer creditBalance) {
+
+        /**
+         * 构造任务状态事件，delta默认为null
+         *
+         * @param type String 事件类型
+         * @param task AiGenerationTaskResponse 任务信息
+         */
+        public AiTaskEvent(String type, AiGenerationTaskResponse task) {
+            this(type, task, null, null);
+        }
+
+        /**
+         * 构造携带文本增量的任务事件，积分余额默认为null。
+         *
+         * @param type String 事件类型
+         * @param task AiGenerationTaskResponse 任务信息
+         * @param delta String 文本增量
+         */
+        public AiTaskEvent(String type, AiGenerationTaskResponse task, String delta) {
+            this(type, task, delta, null);
+        }
+    }
+
+    /**
+     * AI模型选项
+     *
+     * @param value String 模型值
+     * @param label String 显示名称
+     * @param capability String 能力
+     * @param provider String 渠道
+     * @param apiFormat String 渠道调用格式
+     * @param defaultModel Boolean 是否为默认模型
+     * @param creditCost Integer 非视频模型当前计费单位对应的积分单价
+     * @param creditUnit String 非视频模型积分计费单位
+     * @param capabilities List<String> 模型细能力列表
+     * @param videoBillingConfiguration VideoBillingConfiguration 视频分档计费配置
+     * @param icon String 模型展示图标标识，可为null
+     */
+    public record AiModelOption(String value, String label, String capability, String provider, String apiFormat,
+                                Boolean defaultModel, Integer creditCost, String creditUnit, List<String> capabilities,
+                                VideoBillingConfiguration videoBillingConfiguration, String icon, Boolean newModel) {
+        public AiModelOption(String value, String label, String capability, String provider, String apiFormat,
+                             Boolean defaultModel, Integer creditCost, String creditUnit, List<String> capabilities,
+                             VideoBillingConfiguration videoBillingConfiguration, String icon) {
+            this(value, label, capability, provider, apiFormat, defaultModel, creditCost, creditUnit,
+                    capabilities, videoBillingConfiguration, icon, false);
+        }
+        /** 保持既有调用方不返回视频分档计费配置。 */
+        public AiModelOption(String value, String label, String capability, String provider, String apiFormat,
+                             Boolean defaultModel, Integer creditCost, String creditUnit) {
+            this(value, label, capability, provider, apiFormat, defaultModel, creditCost, creditUnit, List.of(), null, null);
+        }
+
+        /** 保持旧调用方按次计费。 */
+        public AiModelOption(String value, String label, String capability, String provider, String apiFormat,
+                             Boolean defaultModel, Integer creditCost) {
+            this(value, label, capability, provider, apiFormat, defaultModel, creditCost, "generation", List.of(), null, null);
+        }
+    }
+
+    /**
+     * AI模型列表响应
+     *
+     * @param models List<AiModelOption> 全部模型
+     * @param imageModels List<String> 生图模型
+     * @param videoModels List<String> 视频模型
+     * @param textModels List<String> 文本模型
+     * @param audioModels List<String> 语音合成模型
+     */
+    public record AiModelListResponse(List<AiModelOption> models, List<String> imageModels, List<String> videoModels, List<String> textModels,
+                                      List<String> audioModels) {
+        /** 兼容没有语音模型的旧调用方。 */
+        public AiModelListResponse(List<AiModelOption> models, List<String> imageModels, List<String> videoModels, List<String> textModels) {
+            this(models, imageModels, videoModels, textModels, List.of());
+        }
+    }
+
+    /**
+     * AI渠道配置
+     *
+     * @param id String 渠道ID
+     * @param name String 渠道名称
+     * @param baseUrl String 基础URL
+     * @param apiKey String API Key
+     * @param apiFormat String 调用格式
+     * @param models List<String> 模型列表
+     */
+    public record AiChannelConfig(String id, String name, String baseUrl, String apiKey, String apiFormat, List<String> models,
+                                  List<String> availableModels, Map<String, String> modelChannelNames) {
+        public AiChannelConfig(String id, String name, String baseUrl, String apiKey, String apiFormat, List<String> models) {
+            this(id, name, baseUrl, apiKey, apiFormat, models, null, Map.of());
+        }
+        public AiChannelConfig(String id, String name, String baseUrl, String apiKey, String apiFormat, List<String> models,
+                               List<String> availableModels) {
+            this(id, name, baseUrl, apiKey, apiFormat, models, availableModels, Map.of());
+        }
+        public String modelChannelName(String model) {
+            return modelChannelNames == null ? name : modelChannelNames.getOrDefault(model, name);
+        }
+    }
+}

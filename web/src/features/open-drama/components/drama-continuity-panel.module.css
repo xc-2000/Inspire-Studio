@@ -1,0 +1,51 @@
+.panel { display: flex; flex-shrink: 0; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 20px; border-bottom: 1px solid var(--studio-line); background: var(--studio-surface); color: var(--studio-text); pointer-events: auto; }
+.summary { display: flex; align-items: center; gap: 10px; min-width: 230px; flex: 1 0 230px; }
+.summary > div { flex-shrink: 0; white-space: nowrap; }
+.summaryIcon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--studio-primary-soft); color: var(--studio-action); flex-shrink: 0; }
+.summary strong { display: block; font-size: 12px; font-weight: 600; }
+.summary small { display: block; font-size: 10px; margin-top: 3px; color: var(--studio-muted); }
+.progress { width: 70px; min-width: 60px; max-width: 100px; flex: 0 0 70px; margin: 0; }
+.actions, .dialogActions, .resultFooter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.actions :global(.ant-btn) { font-size: 11px; height: 30px; border-radius: 7px; box-shadow: none; }
+.dialogBody { display: flex; flex-direction: column; gap: 16px; padding-top: 8px; color: var(--studio-text); }
+.checkHeader { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.checkHeader strong { font-size: 14px; }
+.checkHeader p, .diagnosis p, .playlist > p, .assemblyProgress p { margin: 5px 0 0; color: var(--studio-muted); font-size: 12px; line-height: 1.7; }
+.stats { display: flex; gap: 16px; flex-wrap: wrap; padding: 12px; border: 1px solid var(--studio-line); border-radius: 10px; background: var(--studio-surface-raised); font-size: 12px; color: var(--studio-muted); }
+.stats b { color: var(--studio-text); font-weight: 500; margin-left: 5px; }
+.issues { list-style: none; padding: 0; margin: 0; }
+.issues li { display: flex; gap: 8px; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid var(--studio-line); font-size: 12px; }
+.issues li > span:nth-child(2) { flex: 1; min-width: 0; line-height: 1.7; overflow-wrap: anywhere; }
+.issues :global(.ant-tag) { flex-shrink: 0; margin: 0; font-size: 10px; }
+.issues :global(.ant-btn) { flex-shrink: 0; font-size: 11px; padding: 0 4px; }
+.allReady { display: flex; align-items: center; gap: 10px; color: var(--studio-action); padding: 12px; font-size: 12px; line-height: 1.7; background: var(--studio-primary-soft); border-radius: 10px; }
+.allReady svg { flex-shrink: 0; }
+.diagnosis { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 14px; border-radius: 10px; border: 1px solid var(--studio-line); }
+.diagnosis strong { font-size: 12px; }
+.diagnosis :global(.ant-btn) { flex-shrink: 0; font-size: 12px; }
+.dialogActions { justify-content: flex-end; }
+.previewLayout { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 16px; color: var(--studio-text); }
+.playerColumn { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.player { display: grid; place-items: center; background: #111318; border-radius: 12px; overflow: hidden; min-height: 190px; }
+.player video { width: 100%; height: auto; max-height: 56vh; object-fit: contain; }
+.nowPlaying { display: flex; flex-direction: column; gap: 5px; }
+.nowPlaying strong { font-size: 12px; }
+.nowPlaying span { font-size: 11px; color: var(--studio-muted); }
+.playlist { padding: 12px; border: 1px solid var(--studio-line); border-radius: 12px; background: var(--studio-surface-raised); min-width: 0; }
+.playlist > strong { font-size: 12px; }
+.playlist > p { font-size: 11px; }
+.playlist ol { list-style: none; margin: 10px 0 0; padding: 0; max-height: 44vh; overflow-y: auto; }
+.playlist li { margin-bottom: 3px; }
+.playlist button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 7px; text-align: left; border-radius: 8px; }
+.playlist button:hover { background: var(--studio-surface-hover); }
+.playlist button[aria-pressed="true"] { color: var(--studio-action); background: var(--studio-primary-soft); }
+.playlist button:focus-visible { outline: 2px solid var(--studio-action); outline-offset: -2px; }
+.playlist button > span { font-size: 10px; width: 18px; flex-shrink: 0; color: var(--studio-muted); }
+.playlist button > div { min-width: 0; flex: 1; }
+.playlist button strong { display: block; font-size: 11px; font-weight: 500; line-height: 1.6; }
+.playlist button small { display: block; font-size: 10px; color: var(--studio-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.assemblyProgress { padding: 14px; border: 1px solid var(--studio-line); border-radius: 10px; }
+.assemblyProgress strong { font-size: 12px; }
+.resultVideo { width: 100%; max-height: 50vh; background: #111318; border-radius: 10px; }
+.resultFooter { justify-content: space-between; }
+@media (max-width: 767px) { .panel { padding: 10px 12px; gap: 8px; } .summary { flex: 1; } .progress { width: 60px; } .actions { gap: 5px; } .previewLayout { grid-template-columns: 1fr; } .playlist ol { max-height: 180px; } .diagnosis { align-items: flex-start; flex-direction: column; } .stats { gap: 8px 12px; } }

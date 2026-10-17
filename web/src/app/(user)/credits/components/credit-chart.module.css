@@ -1,0 +1,152 @@
+.distribution {
+    min-width: 0;
+    container-type: inline-size;
+}
+
+.layout {
+    display: grid;
+    grid-template-columns: minmax(140px, 36%) minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+    min-height: 304px;
+}
+
+.visual {
+    position: relative;
+    min-width: 0;
+    width: 100%;
+    max-width: 240px;
+    aspect-ratio: 1;
+    justify-self: center;
+}
+
+.donut {
+    position: absolute;
+    inset: 0;
+}
+
+.total {
+    position: absolute;
+    inset: 23%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    pointer-events: none;
+    color: var(--studio-muted);
+    font-size: 11px;
+}
+
+.total strong {
+    max-width: 100%;
+    color: var(--studio-text);
+    font-size: clamp(12px, 3.4cqi, 19px);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+    text-align: center;
+}
+
+.details {
+    min-width: 0;
+}
+
+.legendHeading {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 4px 10px 0;
+    border-bottom: 1px solid var(--studio-line);
+    color: var(--studio-muted);
+    font-size: 11px;
+}
+
+.legendScroll {
+    max-height: 264px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--studio-line) transparent;
+    scrollbar-gutter: stable;
+}
+
+.legendScroll:focus-visible {
+    outline: 2px solid var(--studio-action);
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+
+.legend {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.legendRow {
+    display: grid;
+    grid-template-columns: 8px minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: 9px;
+    padding: 10px 4px 10px 0;
+}
+
+.legendRow + .legendRow {
+    border-top: 1px solid var(--studio-line);
+}
+
+.swatch {
+    width: 8px;
+    height: 8px;
+    margin-top: 5px;
+    border-radius: 3px;
+}
+
+.itemCopy {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.itemName {
+    color: var(--studio-text);
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.itemValue {
+    color: var(--studio-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+
+.percentage {
+    color: var(--studio-text);
+    font-size: 12px;
+    line-height: 1.5;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+@container (max-width: 400px) {
+    .layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 4px;
+    }
+
+    .visual {
+        width: 180px;
+    }
+
+    .total strong {
+        font-size: 16px;
+    }
+
+    .legendScroll {
+        max-height: 240px;
+    }
+}

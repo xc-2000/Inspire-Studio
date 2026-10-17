@@ -1,0 +1,7 @@
+**/__pycache__
+**/*.pyc
+**/cookies.json
+**/_chrome-profile
+**/_test_artifacts
+tests
+

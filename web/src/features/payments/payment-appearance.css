@@ -1,0 +1,102 @@
+.credit-section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.credit-section-heading h2, .credit-orders-heading h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--studio-ink); }
+.credit-section-icon { display: inline-flex; width: 34px; height: 34px; flex-shrink: 0; align-items: center; justify-content: center; border: 1px solid var(--studio-line); border-radius: 10px; background: var(--studio-surface); color: var(--studio-action); }
+.credit-payment-note { display: inline-flex; align-items: center; gap: 6px; color: var(--studio-muted); font-size: 11px; }
+.credit-payment-note svg { color: #22a06b; }
+.credit-plan-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 18px; padding-top: 16px; }
+.credit-plan { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 26px 22px 20px; border: 1px solid var(--studio-line-strong); border-radius: 18px; background: var(--studio-surface); transition: border-color .18s, transform .18s; }
+.credit-plan:hover { border-color: var(--studio-primary-line); transform: translateY(-3px); }
+.credit-plan[data-recommended="true"] { border-color: var(--studio-action); background: linear-gradient(165deg,var(--studio-primary-soft),transparent 50%),var(--studio-surface); }
+.credit-plan-ribbon { position: absolute; top: -13px; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 20px; background: var(--studio-action); color: var(--studio-action-foreground); white-space: nowrap; font-size: 11px; font-weight: 600; }
+.credit-plan-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.credit-plan-top h3 { margin: 0; font-size: 20px; font-weight: 600; color: var(--studio-ink); overflow-wrap: anywhere; }
+.credit-plan-saving { padding: 3px 7px; border: 1px solid var(--studio-primary-line); border-radius: 6px; background: var(--studio-primary-soft); color: var(--studio-action); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.credit-plan-subtitle { margin: 8px 0 0; min-height: 36px; color: var(--studio-muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.credit-plan-unit { margin: 18px 0 0; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--studio-text); }
+.credit-plan-unit > span { color: var(--studio-muted); }
+.credit-plan-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px; margin-top: 8px; color: var(--studio-ink); font-variant-numeric: tabular-nums; }
+.credit-plan-price > span { font-size: 20px; font-weight: 600; }
+.credit-plan-price strong { font-size: clamp(30px,2.7vw,40px); font-weight: 650; letter-spacing: -.04em; line-height: 1.2; }
+.credit-plan-price small { margin-left: 5px; font-size: 11px; color: var(--studio-muted); }
+.credit-plan-quota { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; margin: 14px 0 20px; color: var(--studio-muted); font-size: 11px; }
+.credit-plan-quota strong { font-size: 18px; color: var(--studio-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.credit-plan-buy.ant-btn { height: 40px; border-radius: 9px; box-shadow: none; font-size: 12px; font-weight: 600; }
+.credit-plan-buy.ant-btn-default { background: var(--studio-surface-raised); border-color: var(--studio-line-strong); color: var(--studio-ink); }
+.credit-plan-buy.ant-btn-default:not(:disabled):hover { border-color: var(--studio-action); color: var(--studio-action); background: var(--studio-primary-soft); }
+.credit-plan-divider { margin: 22px 0 18px; height: 1px; background: var(--studio-line); }
+.credit-plan-includes { margin: 0 0 12px; font-size: 10px; color: var(--studio-muted); }
+.credit-plan-features { display: grid; gap: 13px; margin: 0 0 24px; padding: 0; list-style: none; }
+.credit-plan-features li { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.7; color: var(--studio-text); overflow-wrap: anywhere; }
+.credit-plan-features svg { flex-shrink: 0; margin-top: 3px; color: var(--studio-action); }
+.credit-plan-footnote { margin: auto 0 0; font-size: 10px; color: var(--studio-muted); }
+.credit-plan-comparison { margin: 14px 0 0; font-size: 11px; line-height: 1.8; color: var(--studio-muted); }
+@media (min-width: 1600px) { .credit-plan { padding: 30px; } .credit-plan-grid { gap: 24px; } }
+@media (max-width: 1100px) { .credit-plan-grid { grid-template-columns: repeat(2,minmax(0,1fr)); row-gap: 28px; } }
+@media (max-width: 599px) { .credit-plan-grid { grid-template-columns: minmax(0,1fr); } .credit-plan { padding: 24px; } .credit-plan-subtitle { min-height: 0; } .credit-plan-price strong { font-size: 36px; } }
+@media (prefers-reduced-motion: reduce) { .credit-plan { transition: none; } .credit-plan:hover { transform: none; } }
+.credit-package-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 16px; }
+.credit-package-card { position: relative; isolation: isolate; overflow: hidden; min-width: 0; padding: 24px; border: 1px solid var(--studio-primary-line); border-radius: 18px; background: radial-gradient(ellipse at 0 0, color-mix(in srgb, var(--studio-action) 11%, transparent), transparent 65%), var(--studio-surface); transition: border-color .2s, box-shadow .2s, transform .2s; }
+.credit-package-card:hover { border-color: color-mix(in srgb, var(--studio-action) 55%, transparent); box-shadow: 0 8px 30px color-mix(in srgb, var(--studio-action) 7%, transparent); transform: translateY(-2px); }
+.credit-package-card:focus-within { border-color: var(--studio-action); }
+.credit-package-ornament { position: absolute; z-index: -1; top: 25px; right: -26px; width: 140px; height: 140px; transform: rotate(16deg); color: color-mix(in srgb, var(--studio-action) 23%, transparent); pointer-events: none; }
+.credit-package-label { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.credit-package-label h3 { margin: 0; font-size: 13px; line-height: 1.6; font-weight: 500; color: var(--studio-muted); overflow-wrap: anywhere; }
+.credit-package-label > span { display: inline-flex; align-items: center; flex-shrink: 0; gap: 5px; padding: 3px 8px; border: 1px solid var(--studio-line); border-radius: 20px; font-size: 10px; color: var(--studio-muted); background: var(--studio-surface); }
+.credit-payment-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--studio-action); }
+.credit-package-amount { display: flex; align-items: center; gap: 10px; margin-top: 18px; color: var(--studio-ink); }
+.credit-package-symbol { width: 28px; height: 28px; flex-shrink: 0; color: var(--studio-action); }
+.credit-package-amount p { margin: 0; min-width: 0; font-size: clamp(28px, 2.6vw, 38px); font-weight: 600; line-height: 1.15; letter-spacing: -.045em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.credit-package-amount p > span { margin-left: 7px; font-size: 13px; font-weight: 400; letter-spacing: 0; color: var(--studio-muted); }
+.credit-package-hint { display: flex; align-items: center; gap: 5px; margin: 10px 0 0; color: var(--studio-muted); font-size: 11px; line-height: 1.6; }
+.credit-package-hint svg { flex-shrink: 0; color: var(--studio-action); }
+.credit-package-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin: 28px 0 14px; }
+.credit-package-price strong { color: var(--studio-ink); font-size: 27px; line-height: 1.2; font-weight: 600; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+.credit-package-price strong > span { margin-right: 3px; font-size: 17px; }
+.credit-unit-price { color: var(--studio-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.credit-package-buy.ant-btn { min-height: 40px; height: auto; padding: 10px 14px; border-radius: 10px; box-shadow: none; font-size: 13px; font-weight: 600; }
+.credit-redeem-card { display: flex; align-items: center; justify-content: center; gap: clamp(20px, 3vw, 48px); min-width: 0; padding: 30px; border: 1px solid var(--studio-line); border-radius: 18px; background: var(--studio-surface); }
+.credit-redeem-art { position: relative; display: grid; width: 96px; height: 112px; flex-shrink: 0; place-items: center; border: 1px solid var(--studio-primary-line); border-radius: 18px; background: linear-gradient(145deg, var(--studio-primary-soft), transparent); transform: rotate(-9deg); color: var(--studio-action); }
+.credit-redeem-art > svg:first-child { width: 42px; height: 42px; }
+.credit-redeem-spark { position: absolute; top: -8px; right: -8px; width: 24px; height: 24px; }
+.credit-redeem-copy { min-width: 0; }
+.credit-section-eyebrow { margin: 0 0 10px; color: var(--studio-muted); font-size: 11px; }
+.credit-redeem-copy h2 { margin: 0; color: var(--studio-ink); font-size: clamp(16px, 1.4vw, 20px); line-height: 1.5; font-weight: 600; letter-spacing: -.025em; }
+.credit-redeem-description { margin: 8px 0 20px; color: var(--studio-muted); font-size: 12px; line-height: 1.8; }
+.credit-redeem-link { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 16px; padding: 8px 12px; border: 1px solid var(--studio-line); border-radius: 9px; color: var(--studio-ink); font-size: 12px; font-weight: 500; transition: background .2s, border-color .2s; }
+.credit-redeem-link:hover { color: var(--studio-action); border-color: var(--studio-primary-line); background: var(--studio-primary-soft); }
+.credit-redeem-link:focus-visible { outline: 2px solid var(--studio-action); outline-offset: 4px; }
+.credit-redeem-card--compact { justify-content: flex-start; gap: 20px; padding: 20px 24px; }
+.credit-redeem-card--compact .credit-redeem-art { width: 48px; height: 56px; border-radius: 10px; }
+.credit-redeem-card--compact .credit-redeem-art > svg:first-child { width: 24px; height: 24px; }
+.credit-redeem-card--compact .credit-redeem-spark { width: 16px; height: 16px; }
+.credit-redeem-card--compact .credit-section-eyebrow { display: none; }
+.credit-redeem-card--compact .credit-redeem-copy { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 10px 20px; }
+.credit-redeem-card--compact .credit-redeem-copy h2 { font-size: 14px; }
+.credit-redeem-card--compact .credit-redeem-description { margin: 0; }
+.credit-redeem-card--compact .credit-redeem-link { margin-left: auto; }
+.credit-orders { overflow: hidden; border: 1px solid var(--studio-line); border-radius: 18px; background: var(--studio-surface); }
+.credit-orders-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 22px; }
+.credit-orders-heading .credit-section-icon { background: var(--studio-surface-soft); color: var(--studio-muted); }
+.credit-orders-heading h2 { display: flex; align-items: center; gap: 8px; }
+.credit-orders-heading p { margin: 4px 0 0; color: var(--studio-muted); font-size: 11px; }
+.credit-orders-heading > .ant-btn { height: 32px; padding: 0 10px; border-radius: 8px; font-size: 12px; box-shadow: none; }
+.credit-order-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; padding: 1px 5px; border: 1px solid var(--studio-line); border-radius: 6px; font-size: 10px; font-weight: 400; color: var(--studio-muted); }
+.credit-orders-table .ant-table { background: transparent !important; border: 0 !important; border-radius: 0 !important; }
+.credit-orders-table .ant-table-container { border: 0 !important; border-radius: 0 !important; }
+.credit-orders-table .ant-table-thead > tr > th { padding: 11px 18px !important; background: var(--studio-surface-soft) !important; border-top: 1px solid var(--studio-line); border-radius: 0 !important; font-size: 11px; font-weight: 500; color: var(--studio-muted); }
+.credit-orders-table .ant-table-thead > tr > th::before { display: none !important; }
+.credit-orders-table .ant-table-tbody > tr:not(.ant-table-measure-row) > td { padding: 12px 18px !important; font-size: 12px; }
+.credit-order-number { color: var(--studio-muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; overflow-wrap: anywhere; }
+.credit-order-description { color: var(--studio-ink); font-weight: 500; }
+.credit-order-status { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border-radius: 6px; background: var(--studio-surface-soft); font-size: 10px; color: var(--studio-muted); white-space: nowrap; }
+.credit-order-status[data-status="PAID"] { color: #15803d; background: #22c55e12; }
+.credit-order-status[data-status="PENDING"] { color: #a16207; background: #eab30812; }
+html[data-theme="dark"] .credit-order-status[data-status="PAID"] { color: #70d6a2; }
+html[data-theme="dark"] .credit-order-status[data-status="PENDING"] { color: #e9c36c; }
+.credit-order-open.ant-btn { height: 28px; gap: 4px; padding-inline: 0; font-size: 12px; }
+.credit-orders-pagination.studio-pagination { margin: 0; padding: 14px 20px; border: 0; border-radius: 0; background: transparent; }
+.credit-orders > .ant-alert { margin: 0 20px 16px; }
+@media (min-width: 880px) { .credit-package-grid--single { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); } }
+@media (max-width: 879px) { .credit-package-grid--single { grid-template-columns: 1fr; } .credit-package-grid--single .credit-redeem-card { justify-content: flex-start; padding: 22px 26px; gap: 26px; } .credit-package-grid--single .credit-redeem-art { width: 68px; height: 78px; } .credit-package-grid--single .credit-redeem-art > svg:first-child { width: 32px; height: 32px; } }
+@media (max-width: 479px) { .credit-package-card { padding: 20px; } .credit-package-grid--single .credit-redeem-card { padding: 20px; gap: 20px; } .credit-package-grid--single .credit-redeem-art { width: 50px; height: 64px; border-radius: 12px; } .credit-orders-heading { padding: 16px; } .credit-orders-heading .credit-section-icon { display: none; } .credit-orders-pagination.studio-pagination { padding: 12px 16px; } .credit-payment-note { margin-left: 44px; } }
+@media (prefers-reduced-motion: reduce) { .credit-package-card, .credit-redeem-link { transition: none; } .credit-package-card:hover { transform: none; } }

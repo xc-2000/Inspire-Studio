@@ -1,0 +1,3 @@
+{
+  "URLBlocklist": ["sslocal://*", "snssdk1128://*", "snssdk2329://*"]
+}

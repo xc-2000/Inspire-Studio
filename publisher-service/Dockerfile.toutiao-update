@@ -1,0 +1,9 @@
+FROM inspirestudio-publisher:latest
+USER root
+COPY requirements.txt /app/requirements.txt
+RUN pip install -r /app/requirements.txt
+COPY --chown=publisher:publisher app /app/app
+COPY --chown=publisher:publisher vendor/toutiao-auto-publisher /app/vendor/toutiao-auto-publisher
+COPY --chown=publisher:publisher tests /app/tests
+USER publisher
+RUN python -m unittest discover -s tests -p 'test_*.py'

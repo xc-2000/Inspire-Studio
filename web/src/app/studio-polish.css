@@ -1,0 +1,186 @@
+/* Shared visual treatment. Kept in a named layer so component utilities can
+   still control sizing, positioning and state-dependent colors. */
+@layer studio-polish {
+    :root {
+        --studio-page-wash: radial-gradient(ellipse at 95% 0%, rgba(37, 99, 235, 0.055), transparent 48%);
+        --studio-card-shadow: 0 2px 4px rgba(24, 38, 44, 0.025), 0 12px 32px -20px rgba(24, 38, 44, 0.24);
+        --studio-card-hover-shadow: 0 12px 32px -16px rgba(24, 38, 44, 0.24);
+    }
+
+    html[data-theme="dark"] {
+        --studio-page-wash: radial-gradient(ellipse at 95% 0%, rgba(138, 180, 255, 0.055), transparent 48%);
+        --studio-card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025), 0 12px 32px -20px rgba(0, 0, 0, 0.6);
+        --studio-card-hover-shadow: 0 14px 36px -16px rgba(0, 0, 0, 0.6);
+    }
+}
+
+/* These semantic selectors deliberately override the earlier flat treatment. */
+.studio-page {
+    background-image: var(--studio-page-wash);
+}
+
+.studio-navigation {
+    background: linear-gradient(180deg, var(--studio-rail), color-mix(in srgb, var(--studio-rail) 96%, var(--studio-action)));
+    box-shadow: 4px 0 24px -20px rgba(0, 0, 0, 0.2);
+}
+
+.studio-navigation nav a[aria-current="page"] {
+    position: relative;
+    background: var(--studio-primary-soft);
+    box-shadow: inset 0 0 0 1px var(--studio-primary-line);
+    color: var(--studio-action);
+}
+
+.studio-navigation nav a[aria-current="page"]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 32%;
+    bottom: 32%;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--studio-action);
+}
+
+.studio-topbar {
+    background: color-mix(in srgb, var(--studio-surface) 92%, transparent);
+    backdrop-filter: blur(16px);
+}
+
+.studio-page-heading {
+    position: relative;
+    border-bottom-color: var(--studio-line);
+    padding-top: 4px;
+}
+
+.studio-page-heading::after {
+    content: "";
+    position: absolute;
+    width: 40px;
+    height: 2px;
+    left: 0;
+    bottom: -1px;
+    border-radius: 2px;
+    background: var(--studio-action);
+}
+
+.studio-page-heading > div > p:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    background: var(--studio-primary-soft);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+}
+
+.studio-summary,
+.studio-library-card,
+.studio-shell-bg .studio-page :is(.studio-panel, .studio-panel-solid),
+.studio-creation main > aside > div,
+.studio-creation main > section {
+    box-shadow: var(--studio-card-shadow);
+}
+
+.studio-library-card {
+    border-radius: 18px;
+    background: var(--studio-surface);
+    transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.studio-library-card:hover {
+    transform: none;
+    box-shadow: var(--studio-card-hover-shadow);
+}
+
+.studio-library-card footer {
+    background: color-mix(in srgb, var(--studio-bg-soft) 50%, var(--studio-surface));
+}
+
+.studio-pagination {
+    padding: 14px 16px;
+    border: 1px solid var(--studio-line);
+    border-radius: 12px;
+    background: var(--studio-surface);
+    box-shadow: var(--studio-card-shadow);
+}
+
+.studio-pagination.studio-pagination--compact {
+    padding: 10px 0 0;
+    border: 0;
+    border-top: 1px solid var(--studio-line);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.studio-shell-bg .ant-table-wrapper .ant-table {
+    border: 1px solid var(--studio-line);
+    border-radius: 12px;
+}
+
+.studio-shell-bg .ant-table-wrapper .ant-table-thead > tr > th {
+    font-size: 12px;
+    font-weight: 600;
+    padding-block: 14px;
+}
+
+.studio-shell-bg .ant-table-wrapper .ant-table-tbody > tr:last-child > td {
+    border-bottom: 0;
+}
+
+.studio-shell-bg .ant-form-item-label > label {
+    font-weight: 500;
+}
+
+.studio-shell-bg .ant-tabs-top > .ant-tabs-nav::before {
+    border-bottom-color: var(--studio-line);
+}
+
+.studio-shell-bg .ant-tabs-tab-active {
+    font-weight: 600;
+}
+
+.studio-auth {
+    background-image: none;
+}
+
+.studio-auth-panel {
+    padding: 28px;
+    border: 1px solid var(--studio-line);
+    border-radius: 18px;
+    background: var(--studio-surface);
+    box-shadow: none;
+}
+
+.studio-launch-card {
+    box-shadow: var(--studio-card-shadow);
+}
+
+.studio-launch-card:hover {
+    box-shadow: var(--studio-card-hover-shadow);
+}
+
+.docs-header {
+    box-shadow: 0 1px 12px rgba(20, 30, 40, 0.035);
+}
+
+.docs-pager a {
+    box-shadow: var(--studio-card-shadow);
+    transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.docs-pager a:hover {
+    border-color: var(--studio-primary-line);
+    box-shadow: var(--studio-card-hover-shadow);
+}
+
+@media (max-width: 639px) {
+    .studio-pagination { padding: 12px; }
+    .studio-auth-panel { padding: 20px; border-radius: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .studio-library-card, .docs-pager a { transition: none; }
+}

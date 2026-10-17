@@ -1,0 +1,1113 @@
+package com.inspirestudio.service;
+
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
+import com.inspirestudio.agent.AgentActivityService;
+import com.inspirestudio.ai.AudioInputSupport;
+import com.inspirestudio.ai.VideoGenerationMode;
+import com.inspirestudio.common.BusinessException;
+import com.inspirestudio.ai.AiHttpClient;
+import com.inspirestudio.config.InspireProperties;
+import com.inspirestudio.dto.AiTaskDtos;
+import com.inspirestudio.dto.PersistenceDtos;
+import com.inspirestudio.dto.VideoBillingConfiguration;
+import com.inspirestudio.entity.PersistenceRecords;
+import com.inspirestudio.repository.AiTaskRepository;
+import com.inspirestudio.repository.PersistenceRepository;
+import com.inspirestudio.security.CurrentUserProvider;
+import com.inspirestudio.storage.ObjectStorageService;
+import com.inspirestudio.task.ModelTaskExecutionDispatcher;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
+/**
+ * @title        PersistenceServiceTest.java
+ * @description  业务持久化服务测试
+ * @createTime   2026-07-09 22:00:00
+ */
+@ExtendWith(MockitoExtension.class)
+class PersistenceServiceTest {
+
+    @Test
+    void imageObjectExtensionUsesDetectedMimeInsteadOfMisleadingFilename() {
+        Assertions.assertEquals("webp", org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "fileExtension", "reference.png", "image/webp", "image"));
+        Assertions.assertEquals("png", org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "fileExtension", "reference.webp", "image/png", "image"));
+        Assertions.assertEquals("mp4", org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "fileExtension", "video.mp4", "video/mp4", "video"));
+    }
+
+    /** 业务仓储 */
+    @Mock
+    private PersistenceRepository repository;
+
+    /** AI任务仓储 */
+    @Mock
+    private AiTaskRepository aiTaskRepository;
+
+    /** Agent执行活动服务 */
+    @Mock
+    private AgentActivityService agentActivityService;
+
+    /** 外部媒体下载客户端 */
+    @Mock
+    private AiHttpClient aiHttpClient;
+
+    /** 当前用户提供器 */
+    @Mock
+    private CurrentUserProvider currentUserProvider;
+
+    /** 服务配置 */
+    @Mock
+    private InspireProperties properties;
+
+    /** 对象存储服务 */
+    @Mock
+    private ObjectStorageService objectStorageService;
+
+    /** 模型任务执行调度器 */
+    @Mock
+    private ModelTaskExecutionDispatcher modelTaskExecutionDispatcher;
+
+    /** 待测试服务 */
+    private PersistenceService service;
+
+    /**
+     * 初始化测试对象。
+     */
+    @BeforeEach
+    void setUp() {
+        org.mockito.Mockito.lenient().when(agentActivityService.activitiesForRound(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(JSONObject.class)))
+                .thenReturn(new JSONArray());
+        service = new PersistenceService(repository, aiTaskRepository, agentActivityService, aiHttpClient, currentUserProvider, properties, objectStorageService, modelTaskExecutionDispatcher,
+                org.mockito.Mockito.mock(NewApiModelAvailability.class));
+        org.mockito.Mockito.lenient().when(modelTaskExecutionDispatcher.refresh(org.mockito.ArgumentMatchers.anyString())).thenReturn(Mono.empty());
+        org.mockito.Mockito.lenient().when(repository.getPlatformAiModelConfigByModel(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString())).thenReturn(Mono.empty());
+    }
+
+    /**
+     * 拉取渠道模型应只调用第三方客户端，不读写渠道仓储。
+     */
+    @Test
+    void shouldRefreshChannelModelsWithoutPersistingChannel() {
+        PersistenceDtos.ChannelModelRefreshRequest request = new PersistenceDtos.ChannelModelRefreshRequest(
+                "https://api.example.com/v1", "secret-key", "openai");
+        when(aiHttpClient.fetchChannelModels(request.baseUrl(), request.apiKey(), request.apiFormat()))
+                .thenReturn(Mono.just(List.of("model-a", "model-b")));
+
+        List<String> models = service.refreshChannelModels(request).block();
+
+        Assertions.assertEquals(List.of("model-a", "model-b"), models);
+        verify(aiHttpClient).fetchChannelModels(request.baseUrl(), request.apiKey(), request.apiFormat());
+        verifyNoInteractions(repository);
+    }
+
+    /**
+     * saveProject 应从画布身份分组读取项目 ID 和标题。
+     */
+    @Test
+    void shouldSaveProjectMetadataFromIdentity() {
+        JSONObject identity = new JSONObject();
+        identity.put("id", "canvas-1");
+        identity.put("title", "测试画布");
+        JSONObject project = new JSONObject();
+        project.put("identity", identity);
+        when(currentUserProvider.currentUserId()).thenReturn(Mono.just(9L));
+        when(repository.saveProject(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
+
+        service.saveProject(project).block();
+
+        ArgumentCaptor<PersistenceRecords.SnapshotRecord> captor = ArgumentCaptor.forClass(PersistenceRecords.SnapshotRecord.class);
+        verify(repository).saveProject(captor.capture());
+        PersistenceRecords.SnapshotRecord record = captor.getValue();
+        Assertions.assertEquals("canvas-1", record.getId());
+        Assertions.assertEquals("测试画布", record.getTitle());
+        Assertions.assertEquals("canvas-1", JSON.parseObject(record.getData()).getJSONObject("identity").getString("id"));
+    }
+
+    /**
+     * renameGenerationLogTitle 应拒绝空标题。
+     */
+    @Test
+    void shouldRejectBlankGenerationLogTitle() {
+        BusinessException exception = Assertions.assertThrows(BusinessException.class, () -> service.renameGenerationLogTitle("conversation-1", "   ").block());
+
+        Assertions.assertTrue(exception.getMessage().contains("标题不能为空"));
+    }
+
+    /**
+     * renameGenerationLogTitle 应拒绝超过最大长度的标题。
+     */
+    @Test
+    void shouldRejectTooLongGenerationLogTitle() {
+        BusinessException exception = Assertions.assertThrows(BusinessException.class, () -> service.renameGenerationLogTitle("conversation-1", "a".repeat(101)).block());
+
+        Assertions.assertTrue(exception.getMessage().contains("标题不能超过100个字符"));
+    }
+
+    /**
+     * renameGenerationLogTitle 应将裁剪后的标题写入仓储。
+     */
+    @Test
+    void shouldRenameGenerationLogTitleWithTrimmedValue() {
+        when(currentUserProvider.currentUserId()).thenReturn(Mono.just(9L));
+        when(repository.renameGenerationLogTitle(9L, "conversation-1", "新的标题")).thenReturn(Mono.just(1L));
+
+        service.renameGenerationLogTitle("conversation-1", "  新的标题  ").block();
+
+        verify(repository).renameGenerationLogTitle(9L, "conversation-1", "新的标题");
+    }
+
+    /**
+     * testObjectStorage 应直接使用当前请求配置，不查询默认对象存储。
+     */
+    @Test
+    void shouldTestProvidedObjectStorageWithoutReadingDefaultStorage() {
+        PersistenceDtos.ObjectStorageConfig config = new PersistenceDtos.ObjectStorageConfig(
+                "tencentCos", "secret-id", "secret-key", "example-1250000000", "ap-guangzhou",
+                "", "inspire-studio", "", "storage-1", "测试对象存储", "", false);
+        when(objectStorageService.putObject(
+                org.mockito.ArgumentMatchers.eq(config),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.eq("text/plain;charset=utf-8")))
+                .thenReturn("https://cos.example.com/object-storage-test.txt");
+
+        PersistenceDtos.ObjectStorageFile result = service.testObjectStorage(config).block();
+
+        Assertions.assertNotNull(result);
+        Assertions.assertEquals("https://cos.example.com/object-storage-test.txt", result.url());
+        Assertions.assertEquals("tencentCos", result.provider());
+        Assertions.assertEquals("example-1250000000", result.bucket());
+        Assertions.assertEquals("ap-guangzhou", result.region());
+        Assertions.assertTrue(result.key().contains("/files/"));
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void shouldPersistR2WithEncryptedCredentialsAndAutomaticRegion() {
+        InspireProperties.App app = new InspireProperties.App();
+        app.setSecretKey("test-only-application-encryption-key");
+        when(properties.getApp()).thenReturn(app);
+        when(objectStorageService.supports("cloudflareR2")).thenReturn(true);
+        when(repository.getDefaultPlatformObjectStorage()).thenReturn(Mono.empty());
+        when(repository.createPlatformObjectStorage(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
+        PersistenceDtos.ObjectStorageConfig config = new PersistenceDtos.ObjectStorageConfig(
+                "cloudflareR2", "r2-access-key", "r2-secret-key", "test-bucket", "",
+                "https://account123.r2.cloudflarestorage.com", "inspire-studio", "https://media.example.com",
+                "r2-storage", "R2", "", false);
+
+        JSONObject saved = service.createObjectStorage(config).block();
+
+        ArgumentCaptor<PersistenceRecords.UserObjectStorageRecord> captor =
+                ArgumentCaptor.forClass(PersistenceRecords.UserObjectStorageRecord.class);
+        verify(repository).createPlatformObjectStorage(captor.capture());
+        verify(objectStorageService).validate(config);
+        PersistenceRecords.UserObjectStorageRecord record = captor.getValue();
+        Assertions.assertEquals("cloudflareR2", record.getProvider());
+        Assertions.assertEquals("auto", record.getRegion());
+        Assertions.assertTrue(record.getDefaultStorage());
+        Assertions.assertTrue(record.getAccessKeyEncrypted().startsWith("v1:"));
+        Assertions.assertTrue(record.getSecretKeyEncrypted().startsWith("v1:"));
+        Assertions.assertFalse(record.getSecretKeyEncrypted().contains("r2-secret-key"));
+        Assertions.assertNotNull(saved);
+        Assertions.assertEquals("r2-access-key", saved.getString("accessKey"));
+        Assertions.assertEquals("r2-secret-key", saved.getString("secretKey"));
+        Assertions.assertEquals("auto", saved.getString("region"));
+    }
+
+    /**
+     * renameGenerationLogTitle 应在记录不存在时返回异常。
+     */
+    @Test
+    void shouldRejectMissingGenerationLogWhenRenamingTitle() {
+        when(currentUserProvider.currentUserId()).thenReturn(Mono.just(9L));
+        when(repository.renameGenerationLogTitle(9L, "conversation-1", "新的标题")).thenReturn(Mono.just(0L));
+
+        BusinessException exception = Assertions.assertThrows(BusinessException.class, () -> service.renameGenerationLogTitle("conversation-1", "新的标题").block());
+
+        Assertions.assertTrue(exception.getMessage().contains("生成记录不存在"));
+    }
+
+    /**
+     * saveOrUpdateGenerationRound 应在新轮次 ID 不存在时追加到既有轮次之后。
+     */
+    @Test
+    void shouldAppendGenerationRoundWhenRoundIdIsNew() {
+        JSONObject existingLog = generationLog(round("round-1", "pending"));
+        when(repository.findGenerationLogById(9L, "conversation-1")).thenReturn(Mono.just(generationLogRecord(existingLog)));
+        when(repository.saveGenerationLog(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
+
+        service.saveOrUpdateGenerationRound(9L, "conversation-1", "image", "生成图片", round("round-2", "pending")).block();
+
+        JSONObject savedLog = capturedGenerationLog();
+        JSONArray rounds = savedLog.getJSONArray("rounds");
+        Assertions.assertEquals(2, rounds.size());
+        Assertions.assertEquals("round-1", rounds.getJSONObject(0).getString("id"));
+        Assertions.assertEquals("round-2", rounds.getJSONObject(1).getString("id"));
+    }
+
+    /**
+     * saveOrUpdateGenerationRound 应在同一会话连续完成两轮后保留全部历史轮次。
+     */
+    @Test
+    void shouldKeepPreviousRoundsWhenCompletingAnotherTurn() {
+        AtomicReference<JSONObject> persistedLog = new AtomicReference<>(
+                generationLog(roundWithResults("server-round-1", "success")));
+        when(repository.findGenerationLogById(9L, "conversation-1"))
+                .thenAnswer(invocation -> Mono.just(generationLogRecord(persistedLog.get())));
+        when(repository.saveGenerationLog(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> {
+            PersistenceRecords.GenerationLogRecord record = invocation.getArgument(0);
+            persistedLog.set(JSON.parseObject(record.getData()));
+            return Mono.empty();
+        });
+
+        service.saveOrUpdateGenerationRound(9L, "conversation-1", "image", "生成图片",
+                roundWithResults("server-round-2", "pending")).block();
+        service.saveOrUpdateGenerationRound(9L, "conversation-1", "image", "生成图片",
+                roundWithResults("server-round-2", "success")).block();
+
+        JSONArray rounds = persistedLog.get().getJSONArray("rounds");
+        Assertions.assertEquals(2, rounds.size());
+        Assertions.assertEquals("server-round-1", rounds.getJSONObject(0).getString("id"));
+        Assertions.assertEquals("success", rounds.getJSONObject(0).getJSONArray("results")
+                .getJSONObject(0).getString("status"));
+        Assertions.assertEquals("server-round-2", rounds.getJSONObject(1).getString("id"));
+        Assertions.assertEquals("success", rounds.getJSONObject(1).getJSONArray("results")
+                .getJSONObject(0).getString("status"));
+    }
+
+    /**
+     * saveOrUpdateGenerationRound 应将后端执行活动写入生成轮次。
+     */
+    @Test
+    void shouldSaveBackendActivitiesWithGenerationRound() {
+        JSONObject activity = new JSONObject();
+        activity.put("id", "tool-round-1");
+        activity.put("type", "tool-execute");
+        activity.put("title", "调用图片生成工具");
+        activity.put("status", "running");
+        when(agentActivityService.activitiesForRound(
+                org.mockito.ArgumentMatchers.eq("conversation-1"), org.mockito.ArgumentMatchers.any(JSONObject.class)))
+                .thenReturn(JSONArray.of(activity));
+        when(repository.findGenerationLogById(9L, "conversation-1")).thenReturn(Mono.empty());
+        when(repository.saveGenerationLog(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
+
+        service.saveOrUpdateGenerationRound(9L, "conversation-1", "image", "生成图片", round("round-1", "pending")).block();
+
+        JSONObject savedRound = capturedGenerationLog().getJSONArray("rounds").getJSONObject(0);
+        Assertions.assertEquals("tool-round-1", savedRound.getJSONArray("activities").getJSONObject(0).getString("id"));
+    }
+
+    /**
+     * saveOrUpdateGenerationRound 应按相同轮次 ID 原位置替换已有轮次。
+     */
+    @Test
+    void shouldReplaceGenerationRoundAtOriginalPositionWhenRoundIdMatches() {
+        JSONObject existingLog = generationLog(round("round-1", "pending"), round("round-2", "pending"));
+        when(repository.findGenerationLogById(9L, "conversation-1")).thenReturn(Mono.just(generationLogRecord(existingLog)));
+        when(repository.saveGenerationLog(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
+
+        service.saveOrUpdateGenerationRound(9L, "conversation-1", "image", "生成图片", round("round-1", "success")).block();
+
+        JSONArray rounds = capturedGenerationLog().getJSONArray("rounds");
+        Assertions.assertEquals(2, rounds.size());
+        Assertions.assertEquals("round-1", rounds.getJSONObject(0).getString("id"));
+        Assertions.assertEquals("success", rounds.getJSONObject(0).getString("status"));
+        Assertions.assertEquals("round-2", rounds.getJSONObject(1).getString("id"));
+    }
+
+    /**
+     * saveOrUpdateGenerationRound 应在重复写入同一终态时保持轮次数量不变。
+     */
+    @Test
+    void shouldNotDuplicateGenerationRoundWhenTerminalRoundIsSavedRepeatedly() {
+        AtomicReference<JSONObject> persistedLog = new AtomicReference<>(generationLog(round("round-1", "pending")));
+        when(repository.findGenerationLogById(9L, "conversation-1")).thenAnswer(invocation -> Mono.just(generationLogRecord(persistedLog.get())));
+        when(repository.saveGenerationLog(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> {
+            PersistenceRecords.GenerationLogRecord record = invocation.getArgument(0);
+            persistedLog.set(JSON.parseObject(record.getData()));
+            return Mono.empty();
+        });
+
+        JSONObject terminalRound = round("round-1", "success");
+        service.saveOrUpdateGenerationRound(9L, "conversation-1", "image", "生成图片", terminalRound).block();
+        service.saveOrUpdateGenerationRound(9L, "conversation-1", "image", "生成图片", terminalRound).block();
+
+        JSONArray rounds = persistedLog.get().getJSONArray("rounds");
+        Assertions.assertEquals(1, rounds.size());
+        Assertions.assertEquals("success", rounds.getJSONObject(0).getString("status"));
+        verify(repository, times(2)).saveGenerationLog(org.mockito.ArgumentMatchers.any());
+    }
+
+    /**
+     * saveOrUpdateGenerationRound 应在批量终态合并结果时删除已吸收的其他 pending 轮次。
+     */
+    @Test
+    void shouldRemoveMergedPendingRoundsAndKeepOriginalCreatedAt() {
+        JSONObject firstPendingRound = round("call-1", "pending");
+        firstPendingRound.put("createdAt", 100L);
+        JSONObject secondPendingRound = round("call-2", "pending");
+        secondPendingRound.put("createdAt", 200L);
+        when(repository.findGenerationLogById(9L, "conversation-1"))
+                .thenReturn(Mono.just(generationLogRecord(generationLog(firstPendingRound, secondPendingRound))));
+        when(repository.saveGenerationLog(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
+
+        JSONObject completedRound = round("call-1", "success");
+        completedRound.put("createdAt", 300L);
+        completedRound.put("results", JSONArray.of(round("call-1", "success"), round("call-2", "success")));
+        service.saveOrUpdateGenerationRound(9L, "conversation-1", "image", "生成图片", completedRound).block();
+
+        JSONArray rounds = capturedGenerationLog().getJSONArray("rounds");
+        Assertions.assertEquals(1, rounds.size());
+        Assertions.assertEquals("call-1", rounds.getJSONObject(0).getString("id"));
+        Assertions.assertEquals(100L, rounds.getJSONObject(0).getLongValue("createdAt"));
+        Assertions.assertEquals(2, rounds.getJSONObject(0).getJSONArray("results").size());
+    }
+
+    /**
+     * saveOrUpdateGenerationRound 应在任一结果仍等待时保持记录运行中。
+     */
+    @Test
+    void shouldKeepGenerationLogRunningWhileAnyResultIsPending() {
+        JSONObject completedRound = roundWithResults("round-1", "success");
+        JSONObject pendingRound = roundWithResults("round-2", "pending");
+        when(repository.findGenerationLogById(9L, "conversation-1"))
+                .thenReturn(Mono.just(generationLogRecord(generationLog(completedRound, pendingRound))));
+        when(repository.saveGenerationLog(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
+
+        service.saveOrUpdateGenerationRound(9L, "conversation-1", "image", "生成图片", roundWithResults("round-1", "success")).block();
+
+        PersistenceRecords.GenerationLogRecord record = capturedGenerationLogRecord();
+        Assertions.assertEquals("running", record.getGenerationStatus());
+        Assertions.assertNull(record.getGenerationCompletedAt());
+    }
+
+    /**
+     * saveOrUpdateGenerationRound 应以最近完成轮次中的任一成功结果标记成功。
+     */
+    @Test
+    void shouldMarkGenerationLogSuccessfulWhenLatestRoundContainsSuccess() {
+        JSONObject latestRound = new JSONObject();
+        latestRound.put("id", "round-2");
+        latestRound.put("results", JSONArray.of(round("result-1", "failed"), round("result-2", "success")));
+        when(repository.findGenerationLogById(9L, "conversation-1"))
+                .thenReturn(Mono.just(generationLogRecord(generationLog(roundWithResults("round-1", "failed")))));
+        when(repository.saveGenerationLog(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
+
+        service.saveOrUpdateGenerationRound(9L, "conversation-1", "image", "生成图片", latestRound).block();
+
+        PersistenceRecords.GenerationLogRecord record = capturedGenerationLogRecord();
+        Assertions.assertEquals("success", record.getGenerationStatus());
+        Assertions.assertNotNull(record.getGenerationCompletedAt());
+    }
+
+    /**
+     * saveOrUpdateGenerationRound 应在最近完成轮次没有成功结果时标记失败。
+     */
+    @Test
+    void shouldMarkGenerationLogFailedWhenLatestRoundHasNoSuccess() {
+        when(repository.findGenerationLogById(9L, "conversation-1"))
+                .thenReturn(Mono.just(generationLogRecord(generationLog(roundWithResults("round-1", "success")))));
+        when(repository.saveGenerationLog(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
+
+        service.saveOrUpdateGenerationRound(9L, "conversation-1", "video", "生成视频", roundWithSingleResult("round-2", "failed")).block();
+
+        PersistenceRecords.GenerationLogRecord record = capturedGenerationLogRecord();
+        Assertions.assertEquals("failed", record.getGenerationStatus());
+        Assertions.assertNotNull(record.getGenerationCompletedAt());
+    }
+
+    /**
+     * saveOrUpdateGenerationRound 重复保存相同终态时不应刷新完成时间。
+     */
+    @Test
+    void shouldKeepCompletionTimeWhenSameTerminalStateIsSavedAgain() {
+        OffsetDateTime completedAt = OffsetDateTime.parse("2026-07-11T10:00:00Z");
+        PersistenceRecords.GenerationLogRecord existingRecord = generationLogRecord(generationLog(roundWithResults("round-1", "success")));
+        existingRecord.setGenerationStatus("success");
+        existingRecord.setGenerationCompletedAt(completedAt);
+        when(repository.findGenerationLogById(9L, "conversation-1")).thenReturn(Mono.just(existingRecord));
+        when(repository.saveGenerationLog(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
+
+        service.saveOrUpdateGenerationRound(9L, "conversation-1", "image", "生成图片", roundWithResults("round-1", "success")).block();
+
+        Assertions.assertEquals(completedAt, capturedGenerationLogRecord().getGenerationCompletedAt());
+    }
+
+    /**
+     * markGenerationLogViewed 应只更新当前用户所属记录。
+     */
+    @Test
+    void shouldMarkGenerationLogViewedForCurrentUser() {
+        when(currentUserProvider.currentUserId()).thenReturn(Mono.just(9L));
+        when(repository.markGenerationLogViewed(9L, "conversation-1")).thenReturn(Mono.just(1L));
+
+        service.markGenerationLogViewed("conversation-1").block();
+
+        verify(repository).markGenerationLogViewed(9L, "conversation-1");
+    }
+
+    /**
+     * markGenerationLogViewed 在记录不存在或不属于当前用户时应返回异常。
+     */
+    @Test
+    void shouldRejectMissingGenerationLogWhenMarkingViewed() {
+        when(currentUserProvider.currentUserId()).thenReturn(Mono.just(9L));
+        when(repository.markGenerationLogViewed(9L, "conversation-1")).thenReturn(Mono.just(0L));
+
+        BusinessException exception = Assertions.assertThrows(BusinessException.class,
+                () -> service.markGenerationLogViewed("conversation-1").block());
+
+        Assertions.assertTrue(exception.getMessage().contains("生成记录不存在"));
+    }
+
+    /**
+     * listGenerationLogs 应返回任务状态和未读判断时间。
+     */
+    @Test
+    void shouldIncludeGenerationTaskMetadataWhenListingLogs() {
+        OffsetDateTime completedAt = OffsetDateTime.parse("2026-07-11T10:00:00Z");
+        OffsetDateTime viewedAt = OffsetDateTime.parse("2026-07-11T09:00:00Z");
+        PersistenceRecords.GenerationLogRecord record = generationLogRecord(generationLog(roundWithResults("round-1", "success")));
+        record.setGenerationStatus("success");
+        record.setGenerationCompletedAt(completedAt);
+        record.setGenerationViewedAt(viewedAt);
+        when(currentUserProvider.currentUserId()).thenReturn(Mono.just(9L));
+        when(repository.listGenerationLogs(9L, "image")).thenReturn(Flux.just(record));
+
+        JSONObject generationLog = service.listGenerationLogs("image").block().getFirst();
+
+        Assertions.assertEquals("success", generationLog.getString("generationStatus"));
+        Assertions.assertEquals("2026-07-11T10:00:00Z", generationLog.getString("generationCompletedAt"));
+        Assertions.assertEquals("2026-07-11T09:00:00Z", generationLog.getString("generationViewedAt"));
+    }
+
+    /**
+     * uploadRemoteMediaToObjectStorage 对已转存媒体应直接返回现有对象存储信息。
+     */
+    @Test
+    void shouldReturnExistingObjectStorageMediaWithoutDownloadingAgain() {
+        PersistenceRecords.MediaFileRecord record = new PersistenceRecords.MediaFileRecord();
+        record.setStorageKey("image:1");
+        record.setUserId(9L);
+        record.setKind("image");
+        record.setSourceUrl("https://example.com/image.png");
+        record.setObjectStorageProvider("qiniuKodo");
+        record.setObjectStorageUrl("https://cdn.example.com/image.png");
+        record.setObjectStorageKey("images/image.png");
+        record.setBucket("bucket");
+        record.setRegion("ap-test");
+        record.setMimeType("image/png");
+        record.setBytes(10L);
+        when(currentUserProvider.currentUserId()).thenReturn(Mono.just(9L));
+        when(repository.getMedia(9L, "image:1")).thenReturn(Mono.just(record));
+
+        PersistenceDtos.UploadedMediaResponse response = service.uploadRemoteMediaToObjectStorage("image:1").block();
+
+        Assertions.assertNotNull(response);
+        Assertions.assertEquals("https://cdn.example.com/image.png", response.url());
+        Assertions.assertEquals("qiniuKodo", response.objectStorage().provider());
+        verify(aiHttpClient, times(0)).downloadRemoteBinary(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
+    }
+
+    /**
+     * AI供应商返回的远程结果地址应按统一远程媒体链路登记。
+     */
+    @Test
+    void shouldRegisterAiGeneratedRemoteMediaThroughUnifiedPath() {
+        String sourceUrl = "https://127.0.0.1/generated.png";
+        PersistenceDtos.RegisterRemoteMediaRequest input = new PersistenceDtos.RegisterRemoteMediaRequest("image", sourceUrl, null, "image/png", 12L, 1, 1, 0, null);
+        when(aiHttpClient.validateRemoteMediaUrl(sourceUrl)).thenReturn(Mono.empty());
+        when(repository.saveMedia(org.mockito.ArgumentMatchers.any(PersistenceRecords.MediaFileRecord.class))).thenReturn(Mono.empty());
+
+        PersistenceDtos.UploadedMediaResponse response = service.registerRemoteMediaForUser(9L, input).block();
+
+        Assertions.assertNotNull(response);
+        ArgumentCaptor<PersistenceRecords.MediaFileRecord> recordCaptor = ArgumentCaptor.forClass(PersistenceRecords.MediaFileRecord.class);
+        verify(repository).saveMedia(recordCaptor.capture());
+        Assertions.assertNotNull(recordCaptor.getValue().getMetadata());
+        verify(aiHttpClient).validateRemoteMediaUrl(sourceUrl);
+    }
+
+    /** 删除渠道时应级联清理没有执行中任务的模型配置。 */
+    @Test
+    void shouldDeleteChannelAndItsModelConfigs() {
+        PersistenceRecords.UserAiModelConfigRecord first = modelConfigRecord("config-1", "channel-1", "model-1");
+        PersistenceRecords.UserAiModelConfigRecord second = modelConfigRecord("config-2", "channel-1", "model-2");
+        when(repository.listPlatformAiModelConfigsByChannel("channel-1")).thenReturn(Flux.just(first, second));
+        when(aiTaskRepository.existsExecutableTasksByModelConfig("config-1")).thenReturn(Mono.just(false));
+        when(aiTaskRepository.existsExecutableTasksByModelConfig("config-2")).thenReturn(Mono.just(false));
+        when(repository.deletePlatformAiModelConfig("config-1")).thenReturn(Mono.just(1L));
+        when(repository.deletePlatformAiModelConfig("config-2")).thenReturn(Mono.just(1L));
+        when(repository.deletePlatformAiChannel("channel-1")).thenReturn(Mono.just(1L));
+
+        service.deleteChannel("channel-1").block();
+
+        verify(repository).deletePlatformAiModelConfig("config-1");
+        verify(repository).deletePlatformAiModelConfig("config-2");
+        verify(repository).deletePlatformAiChannel("channel-1");
+    }
+
+    /** 渠道模型存在执行中任务时应拒绝级联删除。 */
+    @Test
+    void shouldRejectDeletingChannelWithExecutableModelTask() {
+        PersistenceRecords.UserAiModelConfigRecord modelConfig = modelConfigRecord("config-1", "channel-1", "busy-model");
+        when(repository.listPlatformAiModelConfigsByChannel("channel-1")).thenReturn(Flux.just(modelConfig));
+        when(aiTaskRepository.existsExecutableTasksByModelConfig("config-1")).thenReturn(Mono.just(true));
+
+        BusinessException exception = Assertions.assertThrows(BusinessException.class, () -> service.deleteChannel("channel-1").block());
+
+        Assertions.assertTrue(exception.getMessage().contains("等待或运行任务"));
+        verify(repository, times(0)).deletePlatformAiChannel("channel-1");
+    }
+
+    /** 从渠道工作流列表移除模型时应同步删除对应模型配置。 */
+    @Test
+    void shouldDeleteModelConfigRemovedFromChannel() {
+        PersistenceRecords.UserAiChannelRecord existingChannel = new PersistenceRecords.UserAiChannelRecord();
+        existingChannel.setChannelId("channel-1");
+        existingChannel.setApiKeyEncrypted("");
+        existingChannel.setModels("[\"kept-model\",\"removed-model\"]");
+        PersistenceRecords.UserAiModelConfigRecord kept = modelConfigRecord("config-kept", "channel-1", "kept-model");
+        PersistenceRecords.UserAiModelConfigRecord removed = modelConfigRecord("config-removed", "channel-1", "removed-model");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(existingChannel));
+        when(repository.listPlatformAiModelConfigsByChannel("channel-1")).thenReturn(Flux.just(kept, removed));
+        when(repository.updatePlatformAiChannel(org.mockito.ArgumentMatchers.any(PersistenceRecords.UserAiChannelRecord.class)))
+                .thenReturn(Mono.just(1L));
+        when(aiTaskRepository.existsExecutableTasksByModelConfig("config-removed")).thenReturn(Mono.just(false));
+        when(repository.deletePlatformAiModelConfig("config-removed")).thenReturn(Mono.just(1L));
+
+        AiTaskDtos.AiChannelConfig updated = service.updateChannel(new PersistenceDtos.ChannelMutationRequest(
+                "channel-1", "测试渠道", "https://example.com/v1", "", "openai", List.of("kept-model"), 0)).block();
+
+        Assertions.assertNotNull(updated);
+        Assertions.assertEquals(List.of("kept-model"), updated.models());
+        verify(repository).deletePlatformAiModelConfig("config-removed");
+        verify(repository, times(0)).deletePlatformAiModelConfig("config-kept");
+    }
+
+    private static PersistenceRecords.UserAiModelConfigRecord modelConfigRecord(String id, String channelId, String modelName) {
+        PersistenceRecords.UserAiModelConfigRecord record = new PersistenceRecords.UserAiModelConfigRecord();
+        record.setModelConfigId(id);
+        record.setChannelId(channelId);
+        record.setModelName(modelName);
+        record.setModelType("video");
+        return record;
+    }
+
+    /** 创建模型配置时应校验模型属于指定渠道。 */
+    @Test
+    void shouldRejectModelOutsideChannelModelList() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"known-model\"]");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+
+        BusinessException exception = Assertions.assertThrows(BusinessException.class, () -> service.createModelConfig(
+                new com.inspirestudio.dto.PersistenceDtos.CreateModelConfigRequest("channel-1", "unknown-model", "image", java.util.List.of(), 0, 0, true, "high")).block());
+
+        Assertions.assertTrue(exception.getMessage().contains("不在所属渠道"));
+    }
+
+    /** 重复创建同一渠道、模型名和类型时应更新并返回既有配置。 */
+    @Test
+    void shouldCreateModelConfigIdempotently() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"video-model\"]");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+
+        PersistenceRecords.UserAiModelConfigRecord existing = new PersistenceRecords.UserAiModelConfigRecord();
+        existing.setModelConfigId("existing-model-config");
+        existing.setChannelId("channel-1");
+        existing.setModelName("video-model");
+        existing.setModelType("video");
+        existing.setDefaultModel(true);
+        existing.setNewModel(false);
+        when(repository.getPlatformAiModelConfigByModel("channel-1", "video-model", "video"))
+                .thenReturn(Mono.just(existing));
+        when(repository.updatePlatformAiModelConfig(org.mockito.ArgumentMatchers.any(PersistenceRecords.UserAiModelConfigRecord.class)))
+                .thenReturn(Mono.just(1L));
+
+        PersistenceDtos.ModelConfig saved = service.createModelConfig(new PersistenceDtos.CreateModelConfigRequest(
+                "channel-1", "video-model", "video", List.of(VideoGenerationMode.TEXT_TO_VIDEO),
+                3, 0, true, "high")).block();
+
+        Assertions.assertNotNull(saved);
+        Assertions.assertEquals("existing-model-config", saved.id());
+        Assertions.assertTrue(saved.defaultModel());
+        Assertions.assertEquals(3, saved.sortOrder());
+        Assertions.assertFalse(saved.newModel(), "重复创建不能把旧模型重新标为 NEW");
+        verify(repository, times(0)).createPlatformAiModelConfig(org.mockito.ArgumentMatchers.any());
+        verify(repository).updatePlatformAiModelConfig(org.mockito.ArgumentMatchers.argThat(record ->
+                "existing-model-config".equals(record.getModelConfigId()) && Boolean.TRUE.equals(record.getDefaultModel())));
+    }
+
+    @Test
+    void shouldPersistModelAppearanceAndAllowRemovingNewBadge() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"sora-2\"]");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+        when(repository.createPlatformAiModelConfig(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
+
+        PersistenceDtos.ModelConfig created = service.createModelConfig(new PersistenceDtos.CreateModelConfigRequest(
+                "channel-1", "sora-2", "text", List.of(), 0, 0, true, "high")).block();
+        Assertions.assertNotNull(created);
+        Assertions.assertTrue(created.newModel());
+        ArgumentCaptor<PersistenceRecords.UserAiModelConfigRecord> captor = ArgumentCaptor.forClass(PersistenceRecords.UserAiModelConfigRecord.class);
+        verify(repository).createPlatformAiModelConfig(captor.capture());
+        PersistenceRecords.UserAiModelConfigRecord record = captor.getValue();
+        when(repository.getPlatformAiModelConfig(created.id())).thenReturn(Mono.just(record));
+        when(repository.updatePlatformAiModelConfig(record)).thenReturn(Mono.just(1L));
+
+        PersistenceDtos.ModelConfig unchanged = service.updateModelConfig(new PersistenceDtos.UpdateModelConfigRequest(
+                created.id(), "text", List.of(), 0, 0, true, "high")).block();
+        Assertions.assertTrue(unchanged.newModel(), "旧客户端省略标记字段时应保留");
+
+        PersistenceDtos.ModelConfig updated = service.updateModelConfig(new PersistenceDtos.UpdateModelConfigRequest(
+                created.id(), "text", List.of(), 0, 0, true, "high", "generation", 1,
+                new JSONObject(), null, null, "bolt", false, null, false)).block();
+        Assertions.assertFalse(updated.newModel());
+        Assertions.assertEquals("bolt", updated.modelIcon());
+
+        when(repository.listPlatformAiModelConfigs()).thenReturn(Flux.just(record));
+        PersistenceDtos.ModelConfig reloaded = service.getPlatformModelConfigs().block().getFirst();
+        Assertions.assertFalse(reloaded.newModel());
+        Assertions.assertEquals("bolt", reloaded.modelIcon());
+    }
+
+    /**
+     * 模型思考配置应在新建、更新和查询间完整往返。
+     */
+    @Test
+    void shouldRoundTripModelThinkingConfiguration() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"deepseek-reasoner\"]");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+        when(repository.createPlatformAiModelConfig(org.mockito.ArgumentMatchers.any(PersistenceRecords.UserAiModelConfigRecord.class))).thenReturn(Mono.empty());
+
+        PersistenceDtos.ModelConfig created = service.createModelConfig(new PersistenceDtos.CreateModelConfigRequest(
+                "channel-1", "deepseek-reasoner", "text", java.util.List.of(), 0, 0, false, "max")).block();
+
+        Assertions.assertNotNull(created);
+        Assertions.assertFalse(created.thinkingEnabled());
+        Assertions.assertEquals("max", created.reasoningEffort());
+        ArgumentCaptor<PersistenceRecords.UserAiModelConfigRecord> createCaptor = ArgumentCaptor.forClass(PersistenceRecords.UserAiModelConfigRecord.class);
+        verify(repository).createPlatformAiModelConfig(createCaptor.capture());
+        PersistenceRecords.UserAiModelConfigRecord record = createCaptor.getValue();
+        Assertions.assertFalse(record.getThinkingEnabled());
+        Assertions.assertEquals("max", record.getReasoningEffort());
+
+        when(repository.getPlatformAiModelConfig(created.id())).thenReturn(Mono.just(record));
+        when(repository.updatePlatformAiModelConfig(record)).thenReturn(Mono.just(1L));
+        PersistenceDtos.ModelConfig updated = service.updateModelConfig(new PersistenceDtos.UpdateModelConfigRequest(
+                created.id(), "text", java.util.List.of(), 0, 0, true, "high")).block();
+
+        Assertions.assertNotNull(updated);
+        Assertions.assertTrue(updated.thinkingEnabled());
+        Assertions.assertEquals("high", updated.reasoningEffort());
+        when(repository.listPlatformAiModelConfigs()).thenReturn(Flux.just(record));
+        PersistenceDtos.ModelConfig listed = service.listModelConfigs().block().getFirst();
+        Assertions.assertTrue(listed.thinkingEnabled());
+        Assertions.assertEquals("high", listed.reasoningEffort());
+    }
+
+    /**
+     * 未填写思考配置时应使用历史记录迁移后的默认值。
+     */
+    @Test
+    void shouldDefaultModelThinkingConfiguration() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"deepseek-chat\"]");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+        when(repository.createPlatformAiModelConfig(org.mockito.ArgumentMatchers.any(PersistenceRecords.UserAiModelConfigRecord.class))).thenReturn(Mono.empty());
+
+        PersistenceDtos.ModelConfig created = service.createModelConfig(new PersistenceDtos.CreateModelConfigRequest(
+                "channel-1", "deepseek-chat", "text", java.util.List.of(), 0, 0, null, null)).block();
+
+        Assertions.assertNotNull(created);
+        Assertions.assertTrue(created.thinkingEnabled());
+        Assertions.assertEquals("high", created.reasoningEffort());
+    }
+
+    /** 视频模型的按秒计费单位应在创建、更新和查询间完整往返。 */
+    @Test
+    void shouldRoundTripVideoCreditUnit() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"video-model\"]");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+        when(repository.createPlatformAiModelConfig(org.mockito.ArgumentMatchers.any(PersistenceRecords.UserAiModelConfigRecord.class))).thenReturn(Mono.empty());
+
+        PersistenceDtos.ModelConfig created = service.createModelConfig(new PersistenceDtos.CreateModelConfigRequest(
+                "channel-1", "video-model", "video", List.of(), 0, 3, true, "high", "second")).block();
+
+        Assertions.assertNotNull(created);
+        Assertions.assertEquals("second", created.creditUnit());
+        ArgumentCaptor<PersistenceRecords.UserAiModelConfigRecord> captor = ArgumentCaptor.forClass(PersistenceRecords.UserAiModelConfigRecord.class);
+        verify(repository).createPlatformAiModelConfig(captor.capture());
+        Assertions.assertEquals("second", captor.getValue().getCreditUnit());
+
+        when(repository.getPlatformAiModelConfig(created.id())).thenReturn(Mono.just(captor.getValue()));
+        when(repository.updatePlatformAiModelConfig(captor.getValue())).thenReturn(Mono.just(1L));
+        PersistenceDtos.ModelConfig updated = service.updateModelConfig(new PersistenceDtos.UpdateModelConfigRequest(
+                created.id(), "video", List.of(), 0, 4, true, "high", "second")).block();
+
+        Assertions.assertNotNull(updated);
+        Assertions.assertEquals("second", updated.creditUnit());
+    }
+
+    @Test
+    void shouldRoundTripConfiguredVideoDurations() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"video-model\"]");
+        channel.setApiFormat("newapi");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+        when(repository.createPlatformAiModelConfig(org.mockito.ArgumentMatchers.any(PersistenceRecords.UserAiModelConfigRecord.class))).thenReturn(Mono.empty());
+        var configuration = new VideoBillingConfiguration("second", 3,
+                java.util.Map.of(VideoGenerationMode.TEXT_TO_VIDEO, java.util.Map.of("720p", 10)), List.of(30, 15, 30), "720P");
+        var created = service.createModelConfig(new PersistenceDtos.CreateModelConfigRequest(
+                "channel-1", "video-model", "video", List.of(VideoGenerationMode.TEXT_TO_VIDEO), 0, 0,
+                false, "high", "second", 1, new JSONObject(), configuration, null, null, false, null)).block();
+        Assertions.assertNotNull(created);
+        Assertions.assertEquals(List.of(15, 30), created.videoBillingConfiguration().supportedDurationsSeconds());
+        Assertions.assertEquals(10, created.videoBillingConfiguration().modePrices().get(VideoGenerationMode.TEXT_TO_VIDEO).get("720p"));
+        ArgumentCaptor<PersistenceRecords.UserAiModelConfigRecord> captor = ArgumentCaptor.forClass(PersistenceRecords.UserAiModelConfigRecord.class);
+        verify(repository).createPlatformAiModelConfig(captor.capture());
+        var decoded = com.alibaba.fastjson2.JSON.parseObject(captor.getValue().getVideoBillingConfiguration(), VideoBillingConfiguration.class);
+        Assertions.assertEquals(List.of(15, 30), decoded.supportedDurationsSeconds());
+        Assertions.assertEquals("720p", created.videoBillingConfiguration().defaultResolution());
+        Assertions.assertEquals("720p", decoded.defaultResolution());
+        Assertions.assertNull(com.alibaba.fastjson2.JSON.parseObject("{\"billingUnit\":\"second\",\"minimumDurationSeconds\":3,\"modePrices\":{}}", VideoBillingConfiguration.class).defaultResolution());
+        Assertions.assertNull(com.alibaba.fastjson2.JSON.parseObject("{\"billingUnit\":\"second\",\"minimumDurationSeconds\":3,\"modePrices\":{}}", VideoBillingConfiguration.class).supportedDurationsSeconds());
+    }
+
+    @Test
+    void shouldRejectUnpricedDefaultResolution() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"video-model\"]");
+        channel.setApiFormat("newapi");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+        var billing = new VideoBillingConfiguration("second", 3,
+                java.util.Map.of(VideoGenerationMode.TEXT_TO_VIDEO, java.util.Map.of("720p", 10)), List.of(15), "1080p");
+        BusinessException error = Assertions.assertThrows(BusinessException.class, () -> service.createModelConfig(new PersistenceDtos.CreateModelConfigRequest(
+                "channel-1", "video-model", "video", List.of(VideoGenerationMode.TEXT_TO_VIDEO), 0, 0,
+                false, "high", "second", 1, new JSONObject(), billing, null, null, false, null)).block());
+        Assertions.assertTrue(error.getMessage().contains("默认分辨率"));
+        verify(repository, org.mockito.Mockito.never()).createPlatformAiModelConfig(org.mockito.ArgumentMatchers.any());
+    }
+
+    /** 音频输入能力应通过已有能力列表保存，且不能成为分档计费模式。 */
+    @Test
+    void shouldSaveAudioInputCapabilityWithoutBillingMode() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"video-model\"]");
+        channel.setApiFormat("openai");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+        when(repository.createPlatformAiModelConfig(org.mockito.ArgumentMatchers.any(PersistenceRecords.UserAiModelConfigRecord.class))).thenReturn(Mono.empty());
+        VideoBillingConfiguration configuration = new VideoBillingConfiguration("generation", 3,
+                java.util.Map.of(VideoGenerationMode.REFERENCE_TO_VIDEO, java.util.Map.of("720p", 10)));
+
+        PersistenceDtos.ModelConfig created = service.createModelConfig(new PersistenceDtos.CreateModelConfigRequest(
+                "channel-1", "video-model", "video", List.of(VideoGenerationMode.REFERENCE_TO_VIDEO, AudioInputSupport.CAPABILITY), 0, 0,
+                true, "high", "generation", 1, new JSONObject(), configuration, null, null, false, null)).block();
+
+        Assertions.assertNotNull(created);
+        Assertions.assertEquals(List.of(VideoGenerationMode.REFERENCE_TO_VIDEO, AudioInputSupport.CAPABILITY), created.capabilities());
+        Assertions.assertEquals(java.util.Set.of(
+                VideoGenerationMode.TEXT_TO_VIDEO,
+                VideoGenerationMode.IMAGE_TO_VIDEO,
+                VideoGenerationMode.REFERENCE_TO_VIDEO,
+                VideoGenerationMode.FIRST_LAST_FRAME_TO_VIDEO
+        ), created.videoBillingConfiguration().modePrices().keySet());
+        Assertions.assertEquals(10, created.videoBillingConfiguration().modePrices()
+                .get(VideoGenerationMode.REFERENCE_TO_VIDEO).get("720p"));
+    }
+
+    /** 未开启全能参考时，服务端必须拒绝音频能力配置。 */
+    @Test
+    void shouldRejectUnsupportedAudioInputCapability() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"video-model\"]");
+        channel.setApiFormat("openai");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+
+        Assertions.assertThrows(BusinessException.class, () -> service.createModelConfig(new PersistenceDtos.CreateModelConfigRequest(
+                "channel-1", "video-model", "video", List.of(AudioInputSupport.CAPABILITY), 0, 0,
+                true, "high", "generation", 1, new JSONObject(), null, null, null, false, null)).block());
+        verify(repository, times(0)).createPlatformAiModelConfig(org.mockito.ArgumentMatchers.any());
+    }
+
+    /** 从视频模型切换为非视频模型时应清空旧视频分档计费配置。 */
+    @Test
+    void shouldClearVideoBillingConfigurationWhenChangingModelType() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"video-model\"]");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+        when(repository.createPlatformAiModelConfig(org.mockito.ArgumentMatchers.any(PersistenceRecords.UserAiModelConfigRecord.class))).thenReturn(Mono.empty());
+
+        PersistenceDtos.ModelConfig created = service.createModelConfig(new PersistenceDtos.CreateModelConfigRequest(
+                "channel-1", "video-model", "video", List.of(VideoGenerationMode.TEXT_TO_VIDEO), 0, 0, true, "high",
+                "generation", 1, new JSONObject(), new VideoBillingConfiguration("generation", 3,
+                java.util.Map.of(VideoGenerationMode.TEXT_TO_VIDEO, java.util.Map.of("720p", 6))), null, null, false, null)).block();
+
+        Assertions.assertNotNull(created);
+        ArgumentCaptor<PersistenceRecords.UserAiModelConfigRecord> captor = ArgumentCaptor.forClass(PersistenceRecords.UserAiModelConfigRecord.class);
+        verify(repository).createPlatformAiModelConfig(captor.capture());
+        PersistenceRecords.UserAiModelConfigRecord record = captor.getValue();
+        when(repository.getPlatformAiModelConfig(created.id())).thenReturn(Mono.just(record));
+        when(repository.updatePlatformAiModelConfig(record)).thenReturn(Mono.just(1L));
+
+        PersistenceDtos.ModelConfig updated = service.updateModelConfig(new PersistenceDtos.UpdateModelConfigRequest(
+                created.id(), "image", List.of(), 0, 4, true, "high", "generation", 1, new JSONObject(), null, null, null, null, null)).block();
+
+        Assertions.assertNotNull(updated);
+        Assertions.assertNull(updated.videoBillingConfiguration());
+        Assertions.assertNull(record.getVideoBillingConfiguration());
+    }
+
+    /** 非视频模型显式携带视频分档计费配置时应拒绝更新。 */
+    @Test
+    void shouldRejectVideoBillingConfigurationForNonVideoModel() {
+        PersistenceRecords.UserAiModelConfigRecord record = new PersistenceRecords.UserAiModelConfigRecord();
+        record.setModelConfigId("model-1");
+        record.setModelType("video");
+        record.setCapabilities("[]");
+        when(repository.getPlatformAiModelConfig("model-1")).thenReturn(Mono.just(record));
+
+        VideoBillingConfiguration configuration = new VideoBillingConfiguration("generation", 3,
+                java.util.Map.of(VideoGenerationMode.TEXT_TO_VIDEO, java.util.Map.of("720p", 6)));
+
+        Assertions.assertThrows(BusinessException.class, () -> service.updateModelConfig(new PersistenceDtos.UpdateModelConfigRequest(
+                "model-1", "image", List.of(), 0, 0, true, "high", "generation", 1,
+                new JSONObject(), configuration, null, null, null, null)).block());
+        verify(repository, times(0)).updatePlatformAiModelConfig(record);
+    }
+
+    /** 视频模型显式使用未知计费方式时应拒绝保存。 */
+    @Test
+    void shouldRejectUnknownVideoBillingUnit() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"video-model\"]");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+
+        VideoBillingConfiguration configuration = new VideoBillingConfiguration("invalid", 3,
+                java.util.Map.of(VideoGenerationMode.TEXT_TO_VIDEO, java.util.Map.of("720p", 6)));
+
+        Assertions.assertThrows(BusinessException.class, () -> service.createModelConfig(new PersistenceDtos.CreateModelConfigRequest(
+                "channel-1", "video-model", "video", List.of(VideoGenerationMode.TEXT_TO_VIDEO), 0, 0,
+                true, "high", "generation", 1, new JSONObject(), configuration, null, null, false, null)).block());
+        verify(repository, times(0)).createPlatformAiModelConfig(org.mockito.ArgumentMatchers.any());
+    }
+
+    /** 模型自定义JSON请求体参数应在创建、更新和查询间完整往返。 */
+    @Test
+    void shouldRoundTripModelCustomBodyParameters() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"image-model\"]");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+        when(repository.createPlatformAiModelConfig(org.mockito.ArgumentMatchers.any(PersistenceRecords.UserAiModelConfigRecord.class))).thenReturn(Mono.empty());
+
+        PersistenceDtos.ModelConfig created = service.createModelConfig(new PersistenceDtos.CreateModelConfigRequest(
+                "channel-1", "image-model", "image", List.of(), 0, 0, true, "high", "generation", 1,
+                JSON.parseObject("{\"like\":true}"))).block();
+
+        Assertions.assertNotNull(created);
+        Assertions.assertEquals(true, created.customBodyParameters().getBoolean("like"));
+        ArgumentCaptor<PersistenceRecords.UserAiModelConfigRecord> captor = ArgumentCaptor.forClass(PersistenceRecords.UserAiModelConfigRecord.class);
+        verify(repository).createPlatformAiModelConfig(captor.capture());
+        PersistenceRecords.UserAiModelConfigRecord record = captor.getValue();
+        Assertions.assertEquals(true, JSON.parseObject(record.getCustomBodyParameters()).getBoolean("like"));
+
+        when(repository.getPlatformAiModelConfig(created.id())).thenReturn(Mono.just(record));
+        when(repository.updatePlatformAiModelConfig(record)).thenReturn(Mono.just(1L));
+        PersistenceDtos.ModelConfig updated = service.updateModelConfig(new PersistenceDtos.UpdateModelConfigRequest(
+                created.id(), "image", List.of(), 0, 0, true, "high", "generation", 1,
+                JSON.parseObject("{\"like\":false,\"seed\":1}"))).block();
+
+        Assertions.assertNotNull(updated);
+        Assertions.assertEquals(false, updated.customBodyParameters().getBoolean("like"));
+        Assertions.assertEquals(1, updated.customBodyParameters().getInteger("seed"));
+    }
+
+    /** 模型同时并发数应默认取1，并在创建、更新和查询间完整往返。 */
+    @Test
+    void shouldRoundTripModelRequestConcurrency() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"image-model\"]");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+        when(repository.createPlatformAiModelConfig(org.mockito.ArgumentMatchers.any(PersistenceRecords.UserAiModelConfigRecord.class))).thenReturn(Mono.empty());
+
+        PersistenceDtos.ModelConfig defaultCreated = service.createModelConfig(new PersistenceDtos.CreateModelConfigRequest(
+                "channel-1", "image-model", "image", List.of(), 0, 0, true, "high", "generation", null)).block();
+
+        Assertions.assertNotNull(defaultCreated);
+        Assertions.assertEquals(1, defaultCreated.requestConcurrency());
+
+        PersistenceDtos.ModelConfig created = service.createModelConfig(new PersistenceDtos.CreateModelConfigRequest(
+                "channel-1", "image-model", "image", List.of(), 0, 0, true, "high", "generation", 3)).block();
+
+        Assertions.assertNotNull(created);
+        Assertions.assertEquals(3, created.requestConcurrency());
+        ArgumentCaptor<PersistenceRecords.UserAiModelConfigRecord> captor = ArgumentCaptor.forClass(PersistenceRecords.UserAiModelConfigRecord.class);
+        verify(repository, times(2)).createPlatformAiModelConfig(captor.capture());
+        PersistenceRecords.UserAiModelConfigRecord record = captor.getAllValues().getLast();
+        Assertions.assertEquals(3, record.getRequestConcurrency());
+
+        when(repository.getPlatformAiModelConfig(created.id())).thenReturn(Mono.just(record));
+        when(repository.updatePlatformAiModelConfig(record)).thenReturn(Mono.just(1L));
+        PersistenceDtos.ModelConfig updated = service.updateModelConfig(new PersistenceDtos.UpdateModelConfigRequest(
+                created.id(), "image", List.of(), 0, 0, true, "high", "generation", 2)).block();
+
+        Assertions.assertNotNull(updated);
+        Assertions.assertEquals(2, updated.requestConcurrency());
+        verify(modelTaskExecutionDispatcher).refresh(created.id());
+        when(repository.listPlatformAiModelConfigs()).thenReturn(Flux.just(record));
+        PersistenceDtos.ModelConfig listed = service.listModelConfigs().block().getFirst();
+        Assertions.assertEquals(2, listed.requestConcurrency());
+    }
+
+    /** 模型同时并发数小于1时应拒绝创建。 */
+    @Test
+    void shouldRejectModelRequestConcurrencyBelowOne() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"image-model\"]");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+
+        BusinessException exception = Assertions.assertThrows(BusinessException.class, () -> service.createModelConfig(
+                new PersistenceDtos.CreateModelConfigRequest("channel-1", "image-model", "image", List.of(), 0, 0,
+                        true, "high", "generation", 0)).block());
+
+        Assertions.assertTrue(exception.getMessage().contains("同时并发数不能小于1"));
+    }
+
+    /** 存在等待或运行任务的模型配置不得删除，避免任务失去执行队列。 */
+    @Test
+    void shouldRejectDeletingModelConfigWithExecutableTasks() {
+        when(aiTaskRepository.existsExecutableTasksByModelConfig("model-config-1")).thenReturn(Mono.just(true));
+
+        BusinessException exception = Assertions.assertThrows(BusinessException.class,
+                () -> service.deleteModelConfig("model-config-1").block());
+
+        Assertions.assertTrue(exception.getMessage().contains("等待或运行任务"));
+        verifyNoInteractions(repository);
+    }
+
+    /** 图片模型禁止选择按秒计费。 */
+    @Test
+    void shouldRejectSecondCreditUnitForImageModel() {
+        PersistenceRecords.UserAiChannelRecord channel = new PersistenceRecords.UserAiChannelRecord();
+        channel.setModels("[\"image-model\"]");
+        when(repository.getPlatformAiChannel("channel-1")).thenReturn(Mono.just(channel));
+
+        BusinessException exception = Assertions.assertThrows(BusinessException.class, () -> service.createModelConfig(
+                new PersistenceDtos.CreateModelConfigRequest("channel-1", "image-model", "image", List.of(), 0, 3, true, "high", "second")).block());
+
+        Assertions.assertTrue(exception.getMessage().contains("只有视频模型"));
+    }
+
+    /**
+     * 构建包含指定轮次的生成记录。
+     *
+     * @param rounds JSONObject[] 生成轮次数组
+     * @return JSONObject 生成记录
+     */
+    private JSONObject generationLog(JSONObject... rounds) {
+        JSONObject log = new JSONObject();
+        log.put("id", "conversation-1");
+        log.put("title", "生成图片");
+        log.put("rounds", JSONArray.of(rounds));
+        return log;
+    }
+
+    /**
+     * 构建生成轮次。
+     *
+     * @param id String 轮次稳定ID
+     * @param status String 生成状态
+     * @return JSONObject 生成轮次
+     */
+    private JSONObject round(String id, String status) {
+        JSONObject round = new JSONObject();
+        round.put("id", id);
+        round.put("status", status);
+        return round;
+    }
+
+    /**
+     * 将生成记录 JSON 转换为仓储返回对象。
+     *
+     * @param log JSONObject 生成记录
+     * @return GenerationLogRecord 仓储记录
+     */
+    private PersistenceRecords.GenerationLogRecord generationLogRecord(JSONObject log) {
+        PersistenceRecords.GenerationLogRecord record = new PersistenceRecords.GenerationLogRecord();
+        record.setData(JSON.toJSONString(log));
+        return record;
+    }
+
+    /**
+     * 捕获并解析最近一次保存的生成记录。
+     *
+     * @return JSONObject 保存后的生成记录
+     */
+    private JSONObject capturedGenerationLog() {
+        return JSON.parseObject(capturedGenerationLogRecord().getData());
+    }
+
+    /**
+     * 捕获最近一次保存的生成记录实体。
+     *
+     * @return GenerationLogRecord 保存后的生成记录实体
+     */
+    private PersistenceRecords.GenerationLogRecord capturedGenerationLogRecord() {
+        ArgumentCaptor<PersistenceRecords.GenerationLogRecord> captor = ArgumentCaptor.forClass(PersistenceRecords.GenerationLogRecord.class);
+        verify(repository).saveGenerationLog(captor.capture());
+        return captor.getValue();
+    }
+
+    /**
+     * 构建包含结果数组的生成轮次。
+     *
+     * @param id String 轮次稳定ID
+     * @param status String 结果状态
+     * @return JSONObject 生成轮次
+     */
+    private JSONObject roundWithResults(String id, String status) {
+        JSONObject round = new JSONObject();
+        round.put("id", id);
+        round.put("results", JSONArray.of(round(id, status)));
+        return round;
+    }
+
+    /**
+     * 构建包含单结果对象的视频生成轮次。
+     *
+     * @param id String 轮次稳定ID
+     * @param status String 结果状态
+     * @return JSONObject 生成轮次
+     */
+    private JSONObject roundWithSingleResult(String id, String status) {
+        JSONObject round = new JSONObject();
+        round.put("id", id);
+        round.put("result", round(id, status));
+        return round;
+    }
+}

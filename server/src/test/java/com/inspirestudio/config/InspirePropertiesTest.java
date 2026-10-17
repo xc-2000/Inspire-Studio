@@ -1,0 +1,79 @@
+package com.inspirestudio.config;
+
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
+/**
+ * @title        InspirePropertiesTest.java
+ * @description  Inspire配置属性测试
+ * @createTime   2026-06-29 10:55:00
+ */
+class InspirePropertiesTest {
+
+    /**
+     * 测试AI任务队列配置默认值。
+     *
+     * @return void 无返回值
+     */
+    @Test
+    void shouldProvideAiTaskQueueDefaults() {
+        // 默认配置必须可直接启动本地任务消费者。
+        InspireProperties properties = new InspireProperties();
+        InspireProperties.Ai.Task task = properties.getAi().getTask();
+
+        Assertions.assertEquals("Inspire:ai-task:stream", task.getStreamKey());
+        Assertions.assertEquals("Inspire-ai-task-consumer", task.getConsumerGroup());
+        Assertions.assertEquals(4, task.getConsumerConcurrency());
+        Assertions.assertEquals(4, task.getReadBatchSize());
+        Assertions.assertEquals(5, task.getReadBlockSeconds());
+        Assertions.assertEquals(3, task.getPollingIntervalSeconds());
+        Assertions.assertEquals(300, task.getLockTtlSeconds());
+        Assertions.assertEquals(60, task.getLockRenewSeconds());
+        Assertions.assertEquals(300, task.getPendingClaimIdleSeconds());
+        Assertions.assertEquals(900, task.getRunningRecoverSeconds());
+    }
+
+    /**
+     * 测试HTTP图片结果默认不转存对象存储。
+     *
+     * @return void 无返回值
+     */
+    @Test
+    void shouldDisableHttpImageResultObjectStorageUploadByDefault() {
+        InspireProperties properties = new InspireProperties();
+
+        Assertions.assertFalse(properties.getAi().getImage().isUploadHttpResultToObjectStorage());
+    }
+
+    /**
+     * 测试腾讯云COS重试与读取超时配置默认值和修改能力。
+     */
+    @Test
+    void shouldConfigureTencentCosRetryAndSocketTimeout() {
+        InspireProperties properties = new InspireProperties();
+        InspireProperties.ObjectStorage.TencentCos tencentCos = properties.getObjectStorage().getTencentCos();
+
+        Assertions.assertEquals(3, tencentCos.getMaxErrorRetry());
+        Assertions.assertEquals(120_000, tencentCos.getSocketTimeoutMilliseconds());
+
+        tencentCos.setMaxErrorRetry(5);
+        tencentCos.setSocketTimeoutMilliseconds(180_000);
+
+        Assertions.assertEquals(5, tencentCos.getMaxErrorRetry());
+        Assertions.assertEquals(180_000, tencentCos.getSocketTimeoutMilliseconds());
+    }
+
+    /**
+     * 测试分镜Agent超时配置默认值和修改能力。
+     */
+    @Test
+    void shouldConfigureStoryboardAgentTimeout() {
+        InspireProperties properties = new InspireProperties();
+
+        Assertions.assertEquals(90, properties.getAi().getStoryboardAgent().getTimeoutSeconds());
+
+        properties.getAi().getStoryboardAgent().setTimeoutSeconds(180);
+
+        Assertions.assertEquals(180, properties.getAi().getStoryboardAgent().getTimeoutSeconds());
+    }
+}

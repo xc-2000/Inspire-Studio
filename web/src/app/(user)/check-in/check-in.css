@@ -1,0 +1,87 @@
+.checkin-workspace { display: grid; min-width: 0; align-items: start; grid-template-columns: minmax(0, 1.9fr) minmax(290px, .85fr); gap: 20px; }
+.checkin-calendar { min-width: 0; padding: 24px; border: 1px solid var(--studio-line); border-radius: 18px; background: var(--studio-surface); }
+.checkin-calendar-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+.checkin-calendar-title { display: flex; align-items: center; gap: 11px; }
+.checkin-icon-tile { display: grid; width: 40px; height: 40px; flex-shrink: 0; place-items: center; border: 1px solid var(--studio-line); border-radius: 12px; color: var(--studio-action); background: var(--studio-surface-soft); }
+.checkin-calendar-title h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--studio-ink); }
+.checkin-calendar-title p { margin: 4px 0 0; font-size: 11px; color: var(--studio-muted); }
+.checkin-calendar-title strong { margin: 0 3px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--studio-action); }
+.checkin-month-control { display: flex; align-items: center; gap: 4px; padding: 3px; border: 1px solid var(--studio-line); border-radius: 10px; background: var(--studio-surface-soft); }
+.checkin-month-arrow { display: grid; width: 28px; height: 28px; place-items: center; border: 0; border-radius: 7px; color: var(--studio-muted); background: transparent; cursor: pointer; transition: color .2s, background .2s; }
+.checkin-month-arrow:hover:not(:disabled) { color: var(--studio-ink); background: var(--studio-surface-hover); }
+.checkin-month-arrow:disabled { cursor: not-allowed; opacity: .3; }
+.checkin-month-label { min-width: 96px; text-align: center; font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--studio-ink); }
+.checkin-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin: 26px 0 14px; text-align: center; font-size: 11px; color: var(--studio-muted); }
+.checkin-weekdays > :nth-child(n+6) { color: var(--studio-faint); }
+.checkin-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.checkin-day { display: flex; min-width: 0; min-height: 76px; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 10px 3px; border: 1px solid var(--studio-line); border-radius: 12px; background: color-mix(in srgb, var(--studio-surface-soft) 45%, var(--studio-surface)); color: var(--studio-muted); transition: border-color .2s, background .2s, transform .2s; }
+.checkin-day-number { font-size: 14px; line-height: 1; font-weight: 500; font-variant-numeric: tabular-nums; }
+.checkin-day-detail { display: inline-flex; min-height: 13px; align-items: center; gap: 3px; color: var(--studio-faint); font-size: 9px; line-height: 1; white-space: nowrap; }
+.checkin-day-dot { display: block; width: 3px; height: 3px; border-radius: 50%; background: var(--studio-faint); opacity: .5; }
+.checkin-day[data-future="true"] { border-color: transparent; background: color-mix(in srgb, var(--studio-surface-soft) 30%, var(--studio-surface)); color: var(--studio-faint); }
+.checkin-day[data-future="true"] .checkin-day-dot { opacity: .2; }
+.checkin-day[data-checked="true"] { background: color-mix(in srgb, var(--studio-success) 6%, var(--studio-surface)); border-color: color-mix(in srgb, var(--studio-success) 22%, var(--studio-line)); color: var(--studio-ink); }
+.checkin-day[data-checked="true"] .checkin-day-detail { color: var(--studio-success); }
+.checkin-day[data-today="true"] { border-color: var(--studio-action); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--studio-action) 10%, transparent); }
+.checkin-day[data-claimable="true"] { position: relative; cursor: pointer; background: var(--studio-primary-soft); color: var(--studio-ink); }
+.checkin-day[data-claimable="true"] .checkin-day-detail { color: var(--studio-action); }
+.checkin-day[data-claimable="true"]:hover:not(:disabled) { transform: translateY(-2px); background: color-mix(in srgb, var(--studio-action) 20%, var(--studio-surface)); }
+.checkin-day[data-claimable="true"]:disabled { cursor: wait; opacity: .65; }
+.checkin-calendar-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--studio-line); }
+.checkin-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 15px; font-size: 10px; color: var(--studio-muted); }
+.checkin-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.checkin-legend i { display: inline-block; width: 6px; height: 6px; border-radius: 2px; background: var(--studio-faint); }
+.checkin-legend i.checkin-legend-checked { background: var(--studio-success); }
+.checkin-legend i.checkin-legend-today { background: var(--studio-action); }
+.checkin-calendar-help { font-size: 10px; color: var(--studio-faint); }
+.checkin-return-month { display: inline-flex; align-items: center; gap: 4px; padding: 2px 0; border: 0; background: transparent; color: var(--studio-action); font-size: 11px; cursor: pointer; }
+.checkin-sidebar { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
+.checkin-reward { position: relative; overflow: hidden; padding: 24px; border: 1px solid var(--studio-primary-line); border-radius: 18px; background: radial-gradient(ellipse at 95% 0, color-mix(in srgb, var(--studio-action) 12%, transparent), transparent 68%), var(--studio-surface); }
+.checkin-reward-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.checkin-reward-heading h2 { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--studio-ink); font-size: 12px; font-weight: 500; }
+.checkin-reward-heading h2 > svg { color: var(--studio-action); }
+.checkin-reward-status { padding: 3px 6px; border: 1px solid var(--studio-line); border-radius: 5px; color: var(--studio-muted); background: var(--studio-surface); font-size: 9px; white-space: nowrap; }
+.checkin-reward-status[data-claimed="true"] { color: var(--studio-success); }
+.checkin-reward-main { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 24px 0 14px; }
+.checkin-reward-caption { margin: 0 0 8px; color: var(--studio-muted); font-size: 11px; }
+.checkin-reward-value { margin: 0; color: var(--studio-ink); font-size: clamp(30px, 3vw, 42px); font-weight: 600; line-height: 1.2; letter-spacing: -.035em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.checkin-reward-value > span { margin-left: 6px; font-size: 12px; color: var(--studio-muted); letter-spacing: 0; font-weight: 400; }
+.checkin-reward-art { position: relative; width: 80px; height: 88px; flex-shrink: 0; display: grid; place-items: center; }
+.checkin-reward-token { display: grid; place-items: center; width: 68px; height: 76px; border: 1px solid var(--studio-primary-line); border-radius: 20px; transform: rotate(12deg); color: var(--studio-action); background: linear-gradient(150deg, var(--studio-primary-soft), var(--studio-surface)); box-shadow: -5px 5px 0 color-mix(in srgb, var(--studio-action) 6%, var(--studio-surface)); }
+.checkin-reward-token svg { width: 32px; height: 32px; }
+.checkin-reward-glint { position: absolute; top: 0; left: -3px; width: 17px; height: 17px; color: var(--studio-action); }
+.checkin-reward-description { margin: 0; color: var(--studio-muted); font-size: 11px; line-height: 1.8; }
+.checkin-reward-action { position: relative; margin-top: 24px; }
+.checkin-claim-button.ant-btn { min-height: 42px; height: auto; border-radius: 10px; box-shadow: none; font-size: 13px; font-weight: 600; }
+.checkin-claimed { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px; border: 1px solid color-mix(in srgb, var(--studio-success) 24%, var(--studio-line)); border-radius: 10px; background: color-mix(in srgb, var(--studio-success) 7%, var(--studio-surface)); color: var(--studio-success); font-size: 13px; font-weight: 500; }
+.checkin-reward-expiry { display: flex; align-items: center; justify-content: center; gap: 5px; margin: 12px 0 0; color: var(--studio-muted); font-size: 10px; }
+.checkin-guide { padding: 22px 24px; border: 1px solid var(--studio-line); border-radius: 18px; background: var(--studio-surface); }
+.checkin-guide > h2 { margin: 0 0 18px; color: var(--studio-ink); font-size: 12px; font-weight: 600; }
+.checkin-guide-row { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; }
+.checkin-guide-icon { display: grid; place-items: center; width: 30px; height: 30px; flex-shrink: 0; border-radius: 9px; background: var(--studio-surface-soft); color: var(--studio-muted); }
+.checkin-guide-row h3 { margin: 0; color: var(--studio-ink); font-size: 11px; line-height: 1.5; font-weight: 500; }
+.checkin-guide-row p { margin: 5px 0 0; color: var(--studio-muted); font-size: 10px; line-height: 1.8; }
+.checkin-credits-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--studio-line); color: var(--studio-muted); font-size: 11px; transition: color .2s; }
+.checkin-credits-link:hover { color: var(--studio-action); }
+.checkin-page :is(.checkin-month-arrow, .checkin-return-month, .checkin-credits-link, .checkin-day):focus-visible { outline: 2px solid var(--studio-action); outline-offset: 3px; }
+@media (max-width: 1050px) and (min-width: 721px) { .checkin-workspace { grid-template-columns: minmax(0, 1fr) 280px; gap: 14px; } .checkin-calendar { padding: 20px; } .checkin-calendar-heading { gap: 12px; } .checkin-month-control { margin-left: auto; } .checkin-reward, .checkin-guide { padding: 20px; } .checkin-day { min-height: 68px; } }
+@media (max-width: 720px) { .checkin-workspace { display: flex; flex-direction: column; gap: 16px; } .checkin-calendar, .checkin-sidebar { width: 100%; } .checkin-calendar { padding: 18px; } .checkin-calendar-heading { gap: 12px; } .checkin-icon-tile { width: 32px; height: 32px; border-radius: 9px; } .checkin-calendar-title { gap: 8px; } .checkin-calendar-title h2 { font-size: 13px; } .checkin-calendar-title p { font-size: 10px; } .checkin-month-control { gap: 0; padding: 2px; } .checkin-month-label { min-width: 82px; font-size: 11px; } .checkin-month-arrow { width: 26px; height: 28px; } .checkin-weekdays { margin-top: 22px; font-size: 10px; } .checkin-days, .checkin-weekdays { gap: 5px; } .checkin-day { min-height: 58px; gap: 8px; padding: 8px 2px; border-radius: 9px; } .checkin-day-number { font-size: 12px; } .checkin-day-detail { font-size: 8px; gap: 1px; } .checkin-day-detail > svg { width: 10px; height: 10px; } .checkin-calendar-footer { gap: 10px; margin-top: 18px; padding-top: 14px; } .checkin-legend { gap: 10px; font-size: 9px; } .checkin-calendar-help { font-size: 9px; } .checkin-sidebar { gap: 16px; } .checkin-reward, .checkin-guide { padding: 22px; } }
+@media (max-width: 370px) { .checkin-calendar { padding: 14px; } .checkin-calendar-heading { align-items: flex-start; flex-direction: column; } .checkin-month-control { align-self: stretch; justify-content: space-between; } .checkin-day-detail > span:not(.checkin-day-dot) { display: none; } }
+@media (min-width: 721px) and (max-height: 820px) {
+    .checkin-calendar { padding: 20px; }
+    .checkin-weekdays { margin: 20px 0 10px; }
+    .checkin-day { min-height: clamp(48px, 7.2vh, 62px); gap: 6px; padding: 6px 3px; }
+    .checkin-calendar-footer { margin-top: 16px; padding-top: 12px; line-height: 1.4; }
+    .checkin-sidebar { gap: 14px; }
+    .checkin-reward { padding: 20px; }
+    .checkin-reward-main { margin: 16px 0 10px; }
+    .checkin-reward-art { width: 72px; height: 72px; }
+    .checkin-reward-token { width: 58px; height: 64px; border-radius: 17px; }
+    .checkin-reward-action { margin-top: 18px; }
+    .checkin-reward-expiry { margin-top: 10px; }
+    .checkin-guide { padding: 16px 20px; }
+    .checkin-guide > h2 { margin-bottom: 12px; }
+    .checkin-guide-row { margin-top: 12px; }
+    .checkin-credits-link { margin-top: 14px; padding-top: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .checkin-page *, .checkin-page *::before, .checkin-page *::after { transition: none !important; animation: none !important; } .checkin-day[data-claimable="true"]:hover:not(:disabled) { transform: none; } }

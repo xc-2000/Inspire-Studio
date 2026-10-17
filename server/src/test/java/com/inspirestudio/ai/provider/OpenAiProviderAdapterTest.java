@@ -1,0 +1,116 @@
+package com.inspirestudio.ai.provider;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
+import com.inspirestudio.ai.AiHttpClient;
+import com.inspirestudio.ai.AiMediaSupport;
+import com.inspirestudio.ai.AiTaskExecutionContext;
+import com.inspirestudio.ai.AiTaskTypes;
+import com.inspirestudio.config.InspireProperties;
+import com.inspirestudio.dto.AiTaskDtos;
+import com.inspirestudio.entity.AiGenerationTask;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
+
+/**
+ * OpenAI兼容适配器请求测试。
+ *
+ * @date 2026-07-24 00:00
+ */
+class OpenAiProviderAdapterTest {
+
+    /**
+     * 文本任务应使用Chat Completions端点，并按思考开关发送正确参数。
+     */
+    @Test
+    void shouldSendThinkingConfigurationToChatCompletions() {
+        AiHttpClient aiHttpClient = mock(AiHttpClient.class);
+        OpenAiProviderAdapter adapter = new OpenAiProviderAdapter(aiHttpClient, mock(AiMediaSupport.class), new InspireProperties());
+        List<JSONObject> payloads = new ArrayList<>();
+        when(aiHttpClient.sendJsonRequest(any(AiTaskDtos.AiChannelConfig.class), eq("POST"), eq("/chat/completions"), any()))
+                .thenAnswer(invocation -> {
+                    payloads.add(JSON.parseObject(JSON.toJSONString(invocation.getArgument(3))));
+                    return Mono.just(JSON.parseObject("{\"choices\":[{\"message\":{\"content\":\"完成\"}}]}"));
+                });
+
+        adapter.execute(textContext(true, "max")).block();
+        adapter.execute(textContext(false, "max")).block();
+
+        Assertions.assertEquals(2, payloads.size());
+        Assertions.assertEquals("enabled", payloads.get(0).getJSONObject("thinking").getString("type"));
+        Assertions.assertEquals("max", payloads.get(0).getString("reasoning_effort"));
+        Assertions.assertEquals("disabled", payloads.get(1).getJSONObject("thinking").getString("type"));
+        Assertions.assertFalse(payloads.get(1).containsKey("reasoning_effort"));
+        Assertions.assertEquals("user", payloads.get(0).getJSONArray("messages").getJSONObject(1).getString("role"));
+    }
+
+    /**
+     * 图片比例必须结合清晰度转换为像素尺寸，已有像素尺寸保持不变。
+     */
+    @Test
+    void shouldNormalizeImageRatioToPixelSize() {
+        AiHttpClient aiHttpClient = mock(AiHttpClient.class);
+        OpenAiProviderAdapter adapter = new OpenAiProviderAdapter(aiHttpClient, mock(AiMediaSupport.class), new InspireProperties());
+        List<JSONObject> payloads = new ArrayList<>();
+        when(aiHttpClient.sendJsonRequest(any(AiTaskDtos.AiChannelConfig.class), eq("POST"), eq("/images/generations"), any()))
+                .thenAnswer(invocation -> {
+                    payloads.add(JSON.parseObject(JSON.toJSONString(invocation.getArgument(3))));
+                    return Mono.just(JSON.parseObject("{\"data\":[]}"));
+                });
+
+        adapter.execute(imageContext("9:16", "2K")).block();
+        adapter.execute(imageContext("1024x1024", "4K")).block();
+
+        Assertions.assertEquals("1152x2048", payloads.get(0).getString("size"));
+        Assertions.assertEquals("b64_json", payloads.get(0).getString("response_format"));
+        Assertions.assertEquals("1024x1024", payloads.get(1).getString("size"));
+    }
+
+    /**
+     * 构建文本任务上下文。
+     *
+     * @param thinkingEnabled boolean 是否开启思考模式
+     * @param reasoningEffort String 思考强度
+     * @return AiTaskExecutionContext 文本任务上下文
+     */
+    private AiTaskExecutionContext textContext(boolean thinkingEnabled, String reasoningEffort) {
+        AiGenerationTask task = new AiGenerationTask();
+        task.setTaskType(AiTaskTypes.TEXT);
+        task.setUserId(1L);
+        return new AiTaskExecutionContext(task,
+                new AiTaskDtos.AiChannelConfig("channel-1", "DeepSeek", "https://api.deepseek.com", "test-key", "openai", List.of("deepseek-chat")),
+                "deepseek-chat", thinkingEnabled, reasoningEffort,
+                new AiTaskDtos.CreateAiTaskRequest(AiTaskTypes.TEXT, "请优化提示词", "deepseek-chat", Map.of("systemPrompt", "你是提示词专家"), List.of(), List.of(), "prompt-optimization"),
+                () -> Mono.just(false), progress -> Mono.empty(), delta -> Mono.empty());
+    }
+
+    /**
+     * 构建图片任务上下文。
+     *
+     * @param size String 图片比例或像素尺寸
+     * @param resolution String 图片清晰度
+     * @return AiTaskExecutionContext 图片任务上下文
+     */
+    private AiTaskExecutionContext imageContext(String size, String resolution) {
+        AiGenerationTask task = new AiGenerationTask();
+        task.setTaskType(AiTaskTypes.IMAGE);
+        task.setUserId(1L);
+        return new AiTaskExecutionContext(task,
+                new AiTaskDtos.AiChannelConfig("channel-1", "OpenAI", "https://api.example.com", "test-key", "openai", List.of("gpt-image-2")),
+                "gpt-image-2", false, "",
+                new AiTaskDtos.CreateAiTaskRequest(AiTaskTypes.IMAGE, "生成一只小猫", "gpt-image-2",
+                        Map.of("count", 1, "quality", "medium", "size", size, "resolution", resolution),
+                        List.of(), List.of(), "imagePage"),
+                () -> Mono.just(false), progress -> Mono.empty(), delta -> Mono.empty());
+    }
+
+}

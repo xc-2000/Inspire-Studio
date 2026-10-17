@@ -1,0 +1,535 @@
+package com.inspirestudio.repository;
+
+import com.inspirestudio.entity.EmailVerificationCode;
+import com.inspirestudio.entity.PasswordResetToken;
+import com.inspirestudio.entity.User;
+import java.time.OffsetDateTime;
+import lombok.RequiredArgsConstructor;
+import org.springframework.r2dbc.core.DatabaseClient;
+import org.springframework.stereotype.Repository;
+import org.springframework.util.StringUtils;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
+/**
+ * @title        UserRepository.java
+ * @description  响应式用户仓储
+ * @createTime   2026-06-24 18:25:00
+ */
+@Repository
+@RequiredArgsConstructor
+public class UserRepository {
+
+    /** 数据库客户端 */
+    private final DatabaseClient databaseClient;
+
+    /**
+     * 根据用户ID查询用户
+     *
+     * @param id Long 用户ID
+     * @return Mono<User> 用户信息
+     */
+    public Mono<User> findById(Long id) {
+        // 按主键查询单个用户。
+        return databaseClient.sql("SELECT users.*, accounts.credit_balance FROM users JOIN user_credit_accounts accounts ON accounts.user_id = users.id WHERE users.id = :id AND users.status <> -1")
+                .bind("id", id)
+                .map((row, metadata) -> RowMappers.user(row))
+                .one();
+    }
+
+    /**
+     * 根据邮箱查询用户
+     *
+     * @param email String 邮箱
+     * @return Mono<User> 用户信息
+     */
+    public Mono<User> findByEmail(String email) {
+        // 邮箱字段有唯一索引，适合登录和注册占用校验。
+        return databaseClient.sql("SELECT users.*, accounts.credit_balance FROM users JOIN user_credit_accounts accounts ON accounts.user_id = users.id WHERE users.email = :email AND users.status <> -1")
+                .bind("email", email)
+                .map((row, metadata) -> RowMappers.user(row))
+                .one();
+    }
+
+    /**
+     * 根据用户名查询用户
+     *
+     * @param username String 用户名
+     * @return Mono<User> 用户信息
+     */
+    public Mono<User> findByUsername(String username) {
+        // 用户名字段有唯一索引，主要用于初始管理员兼容查找。
+        return databaseClient.sql("SELECT users.*, accounts.credit_balance FROM users JOIN user_credit_accounts accounts ON accounts.user_id = users.id WHERE users.username = :username AND users.status <> -1")
+                .bind("username", username)
+                .map((row, metadata) -> RowMappers.user(row))
+                .one();
+    }
+
+    /**
+     * 创建用户
+     *
+     * @param user User 用户信息
+     * @return Mono<Long> 用户ID
+     */
+    public Mono<Long> createUser(User user) {
+        // 插入用户并通过RETURNING直接取回数据库生成的主键ID。
+        DatabaseClient.GenericExecuteSpec spec = databaseClient.sql("""
+                INSERT INTO users(username, password, email, nickname, avatar, role, status, invitation_code, invited_by_user_id, registered_at)
+                VALUES (:username, :password, :email, :nickname, :avatar, :role, :status, :invitationCode, :invitedByUserId, :registeredAt)
+                RETURNING id
+                """)
+                .bind("username", user.getUsername())
+                .bind("password", user.getPassword())
+                .bind("email", user.getEmail())
+                .bind("nickname", user.getNickname());
+        spec = R2dbcBindings.bindNullable(spec, "avatar", user.getAvatar(), String.class)
+                .bind("role", user.getRole())
+                .bind("status", user.getStatus())
+                .bind("invitationCode", user.getInvitationCode());
+        spec = R2dbcBindings.bindNullable(spec, "invitedByUserId", user.getInvitedByUserId(), Long.class)
+                .bind("registeredAt", user.getRegisteredAt());
+        return spec
+                .map((row, metadata) -> row.get("id", Long.class))
+                .one();
+    }
+
+    /**
+     * 仅在初始管理员不存在时创建
+     *
+     * @param user User 管理员用户
+     * @return Mono<Long> 新建管理员ID，管理员已存在时为空
+     */
+    public Mono<Long> createInitialAdminIfAbsent(User user) {
+        // 利用唯一约束原子创建，账号已存在时绝不更新其密码、角色或状态。
+        DatabaseClient.GenericExecuteSpec spec = databaseClient.sql("""
+                INSERT INTO users(username, password, email, nickname, avatar, role, status, invitation_code, invited_by_user_id, registered_at)
+                VALUES (:username, :password, :email, :nickname, :avatar, :role, :status, :invitationCode, NULL, :registeredAt)
+                ON CONFLICT DO NOTHING
+                RETURNING id
+                """)
+                .bind("username", user.getUsername())
+                .bind("password", user.getPassword())
+                .bind("email", user.getEmail())
+                .bind("nickname", user.getNickname());
+        spec = R2dbcBindings.bindNullable(spec, "avatar", user.getAvatar(), String.class)
+                .bind("role", user.getRole())
+                .bind("status", user.getStatus())
+                .bind("invitationCode", user.getInvitationCode())
+                .bind("registeredAt", user.getRegisteredAt());
+        return spec.map((row, metadata) -> row.get("id", Long.class)).one();
+    }
+
+    /**
+     * 创建邮箱验证码
+     *
+     * @param record EmailVerificationCode 验证码记录
+     * @return Mono<Long> 验证码ID
+     */
+    public Mono<Long> createEmailCode(EmailVerificationCode record) {
+        // 验证码只保存哈希值，明文验证码不落库。
+        return databaseClient.sql("""
+                INSERT INTO email_verification_codes(email, code_hash, purpose, send_count, status, expires_at)
+                VALUES (:email, :codeHash, :purpose, :sendCount, :status, :expiresAt)
+                RETURNING id
+                """)
+                .bind("email", record.getEmail())
+                .bind("codeHash", record.getCodeHash())
+                .bind("purpose", record.getPurpose())
+                .bind("sendCount", record.getSendCount())
+                .bind("status", record.getStatus())
+                .bind("expiresAt", record.getExpiresAt())
+                .map((row, metadata) -> row.get("id", Long.class))
+                .one();
+    }
+
+    /**
+     * 查询最新有效验证码
+     *
+     * @param email String 邮箱
+     * @param purpose String 用途
+     * @return Mono<EmailVerificationCode> 验证码
+     */
+    public Mono<EmailVerificationCode> latestValidEmailCode(String email, String purpose) {
+        // 只读取未使用且未过期的最新验证码。
+        return databaseClient.sql("""
+                SELECT * FROM email_verification_codes
+                WHERE email = :email AND purpose = :purpose AND status = 0 AND expires_at > CURRENT_TIMESTAMP
+                ORDER BY id DESC
+                LIMIT 1
+                """)
+                .bind("email", email)
+                .bind("purpose", purpose)
+                .map((row, metadata) -> RowMappers.emailCode(row))
+                .one();
+    }
+
+    /**
+     * 标记验证码已使用
+     *
+     * @param id Long 验证码ID
+     * @return Mono<Long> 更新数量
+     */
+    public Mono<Long> markEmailCodeUsed(Long id) {
+        // 使用状态和过期时间作为更新条件，避免重复消费验证码。
+        return databaseClient.sql("""
+                UPDATE email_verification_codes
+                SET status = 1, used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE id = :id AND status = 0 AND expires_at > CURRENT_TIMESTAMP
+                """).bind("id", id).fetch().rowsUpdated();
+    }
+
+    /**
+     * 保存密码重置令牌。
+     * <p>
+     * 同一用户始终只保留最新的一个有效链接，新请求会立即覆盖旧令牌。
+     *
+     * @param token PasswordResetToken 密码重置令牌
+     * @return Mono<Void> 保存结果
+     */
+    public Mono<Void> upsertPasswordResetToken(PasswordResetToken token) {
+        return databaseClient.sql("""
+                INSERT INTO password_reset_tokens(user_id, token_hash, expires_at)
+                VALUES (:userId, :tokenHash, :expiresAt)
+                ON CONFLICT (user_id) DO UPDATE
+                SET token_hash = EXCLUDED.token_hash,
+                    expires_at = EXCLUDED.expires_at,
+                    used_at = NULL,
+                    created_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                """)
+                .bind("userId", token.getUserId())
+                .bind("tokenHash", token.getTokenHash())
+                .bind("expiresAt", token.getExpiresAt())
+                .fetch()
+                .rowsUpdated()
+                .then();
+    }
+
+    /**
+     * 使指定密码重置令牌失效。
+     *
+     * @param tokenHash String 重置令牌哈希
+     * @return Mono<Void> 操作结果
+     */
+    public Mono<Void> invalidatePasswordResetToken(String tokenHash) {
+        return databaseClient.sql("""
+                UPDATE password_reset_tokens
+                SET used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE token_hash = :tokenHash AND used_at IS NULL
+                """)
+                .bind("tokenHash", tokenHash)
+                .fetch()
+                .rowsUpdated()
+                .then();
+    }
+
+    /**
+     * 查询有效的密码重置令牌。
+     *
+     * @param tokenHash String 重置令牌哈希
+     * @return Mono<PasswordResetToken> 有效令牌
+     */
+    public Mono<PasswordResetToken> findActivePasswordResetToken(String tokenHash) {
+        return databaseClient.sql("""
+                SELECT * FROM password_reset_tokens
+                WHERE token_hash = :tokenHash AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+                """)
+                .bind("tokenHash", tokenHash)
+                .map((row, metadata) -> RowMappers.passwordResetToken(row))
+                .one();
+    }
+
+    /**
+     * 原子消费密码重置令牌。
+     *
+     * @param tokenHash String 重置令牌哈希
+     * @return Mono<Long> 令牌关联的用户ID
+     */
+    public Mono<Long> consumePasswordResetToken(String tokenHash) {
+        return databaseClient.sql("""
+                UPDATE password_reset_tokens
+                SET used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE token_hash = :tokenHash AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+                RETURNING user_id
+                """)
+                .bind("tokenHash", tokenHash)
+                .map((row, metadata) -> row.get("user_id", Long.class))
+                .one();
+    }
+
+    /**
+     * 注册用户并标记验证码已使用
+     *
+     * @param user User 用户信息
+     * @param emailCodeId Long 验证码ID
+     * @return Mono<Long> 用户ID
+     */
+    public Mono<Long> registerUserWithEmailCode(User user, Long emailCodeId) {
+        // 事务由用户服务统一包裹，保证用户、验证码和积分账户同时成功或回滚。
+        return createUser(user)
+                .flatMap(userId -> markEmailCodeUsed(emailCodeId)
+                        .flatMap(updated -> updated == 0 ? Mono.error(new IllegalStateException("邮箱验证码无效或已使用")) : Mono.just(userId)));
+    }
+
+    /**
+     * 更新最后登录时间
+     *
+     * @param userId Long 用户ID
+     * @return Mono<Void> 操作结果
+     */
+    public Mono<Void> updateLastLoginAt(Long userId) {
+        // 登录成功后刷新最后登录时间和更新时间。
+        return databaseClient.sql("UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
+                .bind("id", userId)
+                .fetch()
+                .rowsUpdated()
+                .then();
+    }
+
+    /**
+     * 标记欢迎引导已读。
+     * <p>
+     * 使用未读条件保证重复请求不会改写首次已读时间。
+     *
+     * @param userId Long 用户ID
+     * @return Mono<Void> 操作结果
+     */
+    public Mono<Void> markWelcomeRead(Long userId) {
+        return databaseClient.sql("""
+                UPDATE users
+                SET welcome_read_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE id = :id AND welcome_read_at IS NULL
+                """)
+                .bind("id", userId)
+                .fetch()
+                .rowsUpdated()
+                .then();
+    }
+
+    /**
+     * 分页查询用户列表（支持搜索和筛选）
+     *
+     * @param page int 页码
+     * @param pageSize int 每页数量
+     * @param keyword String 搜索关键字
+     * @param userId Long 用户ID（精确匹配）
+     * @param role String 角色筛选
+     * @param status Integer 状态筛选
+     * @param createdAfter String 创建时间起始
+     * @param createdBefore String 创建时间截止
+     * @return Flux<User> 用户列表
+     */
+    public Flux<User> listUsers(int page, int pageSize, String keyword, Long userId, String role, Integer status, String createdAfter, String createdBefore) {
+        StringBuilder sql = new StringBuilder("SELECT users.*, accounts.credit_balance FROM users JOIN user_credit_accounts accounts ON accounts.user_id = users.id WHERE users.status <> -1");
+        if (StringUtils.hasText(keyword)) sql.append(" AND (users.username ILIKE :keyword OR users.nickname ILIKE :keyword OR users.email ILIKE :keyword)");
+        if (userId != null) sql.append(" AND users.id = :userId");
+        if (StringUtils.hasText(role)) sql.append(" AND users.role = :role");
+        if (status != null) sql.append(" AND users.status = :status");
+        if (StringUtils.hasText(createdAfter)) sql.append(" AND users.created_at >= :createdAfter");
+        if (StringUtils.hasText(createdBefore)) sql.append(" AND users.created_at <= :createdBefore");
+        sql.append(" ORDER BY users.created_at DESC OFFSET :offset LIMIT :limit");
+        var spec = databaseClient.sql(sql.toString())
+                .bind("offset", (page - 1) * pageSize)
+                .bind("limit", pageSize);
+        if (StringUtils.hasText(keyword)) spec = spec.bind("keyword", "%" + keyword.trim() + "%");
+        if (userId != null) spec = spec.bind("userId", userId);
+        if (StringUtils.hasText(role)) spec = spec.bind("role", role.trim());
+        if (status != null) spec = spec.bind("status", status);
+        if (StringUtils.hasText(createdAfter)) spec = spec.bind("createdAfter", java.time.LocalDateTime.parse(createdAfter.trim()));
+        if (StringUtils.hasText(createdBefore)) spec = spec.bind("createdBefore", java.time.LocalDateTime.parse(createdBefore.trim()));
+        return spec.map((row, metadata) -> RowMappers.user(row)).all();
+    }
+
+    /**
+     * 查询用户总数（支持搜索和筛选）
+     *
+     * @param keyword String 搜索关键字
+     * @param userId Long 用户ID（精确匹配）
+     * @param role String 角色筛选
+     * @param status Integer 状态筛选
+     * @param createdAfter String 创建时间起始
+     * @param createdBefore String 创建时间截止
+     * @return Mono<Long> 用户总数
+     */
+    public Mono<Long> countUsers(String keyword, Long userId, String role, Integer status, String createdAfter, String createdBefore) {
+        StringBuilder sql = new StringBuilder("SELECT COUNT(*) AS total FROM users WHERE status <> -1");
+        if (StringUtils.hasText(keyword)) sql.append(" AND (username ILIKE :keyword OR nickname ILIKE :keyword OR email ILIKE :keyword)");
+        if (userId != null) sql.append(" AND id = :userId");
+        if (StringUtils.hasText(role)) sql.append(" AND role = :role");
+        if (status != null) sql.append(" AND status = :status");
+        if (StringUtils.hasText(createdAfter)) sql.append(" AND created_at >= :createdAfter");
+        if (StringUtils.hasText(createdBefore)) sql.append(" AND created_at <= :createdBefore");
+        var spec = databaseClient.sql(sql.toString());
+        if (StringUtils.hasText(keyword)) spec = spec.bind("keyword", "%" + keyword.trim() + "%");
+        if (userId != null) spec = spec.bind("userId", userId);
+        if (StringUtils.hasText(role)) spec = spec.bind("role", role.trim());
+        if (status != null) spec = spec.bind("status", status);
+        if (StringUtils.hasText(createdAfter)) spec = spec.bind("createdAfter", java.time.LocalDateTime.parse(createdAfter.trim()));
+        if (StringUtils.hasText(createdBefore)) spec = spec.bind("createdBefore", java.time.LocalDateTime.parse(createdBefore.trim()));
+        return spec.map((row, metadata) -> row.get("total", Long.class)).one().defaultIfEmpty(0L);
+    }
+
+    /**
+     * 查询用户总量与新增统计。
+     * <p>
+     * 使用条件聚合在一次表扫描中完成三个计数，避免分别查询造成重复开销。
+     *
+     * @param monthStart OffsetDateTime 本月开始时间
+     * @param dayStart OffsetDateTime 今日开始时间
+     * @return Mono<UserStatistics> 用户统计
+     */
+    public Mono<UserStatistics> getUserStatistics(OffsetDateTime monthStart, OffsetDateTime dayStart) {
+        return databaseClient.sql("""
+                SELECT COUNT(*) AS total_users,
+                       COUNT(*) FILTER (WHERE created_at >= :monthStart) AS monthly_new_users,
+                       COUNT(*) FILTER (WHERE created_at >= :dayStart) AS daily_new_users
+                FROM users
+                WHERE status <> -1
+                """)
+                .bind("monthStart", monthStart)
+                .bind("dayStart", dayStart)
+                .map((row, metadata) -> new UserStatistics(
+                        row.get("total_users", Long.class),
+                        row.get("monthly_new_users", Long.class),
+                        row.get("daily_new_users", Long.class)))
+                .one();
+    }
+
+    /**
+     * 更新用户状态
+     *
+     * @param userId Long 用户ID
+     * @param status int 用户状态
+     * @return Mono<Void> 操作结果
+     */
+    public Mono<Void> updateUserStatus(Long userId, int status) {
+        // 只更新状态和更新时间。
+        return databaseClient.sql("UPDATE users SET status = :status, updated_at = CURRENT_TIMESTAMP WHERE id = :id AND status <> -1")
+                .bind("status", status)
+                .bind("id", userId)
+                .fetch()
+                .rowsUpdated()
+                .then();
+    }
+
+    /**
+     * 用户统计查询结果。
+     *
+     * @param totalUsers long 总用户数
+     * @param monthlyNewUsers long 本月新增用户数
+     * @param dailyNewUsers long 今日新增用户数
+     */
+    public record UserStatistics(long totalUsers, long monthlyNewUsers, long dailyNewUsers) {
+    }
+
+    /**
+     * 更新用户角色
+     *
+     * @param userId Long 用户ID
+     * @param role String 用户角色
+     * @return Mono<Void> 操作结果
+     */
+    public Mono<Void> updateUserRole(Long userId, String role) {
+        // 只更新角色和更新时间。
+        return databaseClient.sql("UPDATE users SET role = :role, updated_at = CURRENT_TIMESTAMP WHERE id = :id AND status <> -1")
+                .bind("role", role)
+                .bind("id", userId)
+                .fetch()
+                .rowsUpdated()
+                .then();
+    }
+
+    /**
+     * 更新当前用户的基础资料。
+     * <p>
+     * 使用用户名唯一性条件完成原子校验，避免并发更新时产生重复用户名。
+     *
+     * @param userId Long 当前用户ID
+     * @param username String 新用户名
+     * @param nickname String 新昵称
+     * @param avatar String 新头像URL
+     * @return Mono<Boolean> 是否更新成功
+     */
+    public Mono<Boolean> updateCurrentUserProfile(Long userId, String username, String nickname, String avatar) {
+        return databaseClient.sql("""
+                UPDATE users
+                SET username = :username,
+                    nickname = :nickname,
+                    avatar = :avatar,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :userId AND status <> -1
+                  AND NOT EXISTS (SELECT 1 FROM users WHERE username = :username AND id <> :userId)
+                """)
+                .bind("username", username)
+                .bind("nickname", nickname)
+                .bind("avatar", avatar)
+                .bind("userId", userId)
+                .fetch()
+                .rowsUpdated()
+                .map(updatedRows -> updatedRows > 0);
+    }
+
+    /**
+     * 更新当前用户的密码哈希。
+     *
+     * @param userId Long 当前用户ID
+     * @param encodedPassword String 新密码哈希
+     * @return Mono<Void> 操作结果
+     */
+    public Mono<Void> updateCurrentUserPassword(Long userId, String encodedPassword) {
+        return databaseClient.sql("UPDATE users SET password = :password, updated_at = CURRENT_TIMESTAMP WHERE id = :userId AND status <> -1")
+                .bind("password", encodedPassword)
+                .bind("userId", userId)
+                .fetch()
+                .rowsUpdated()
+                .then();
+    }
+
+    /**
+     * 更新重置后的密码并递增令牌版本。
+     *
+     * @param userId Long 用户ID
+     * @param encodedPassword String 新密码哈希
+     * @return Mono<Void> 操作结果
+     */
+    public Mono<Void> updatePasswordAfterReset(Long userId, String encodedPassword) {
+        return databaseClient.sql("""
+                UPDATE users
+                SET password = :password,
+                    token_version = token_version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :userId AND status <> -1
+                """)
+                .bind("password", encodedPassword)
+                .bind("userId", userId)
+                .fetch()
+                .rowsUpdated()
+                .flatMap(updatedRows -> updatedRows == 1
+                        ? Mono.<Void>empty()
+                        : Mono.error(new IllegalStateException("密码重置用户不存在")));
+    }
+    public Mono<Long> deleteUserAccount(Long userId) {
+        // Keep the ID for payment/credit audit, but release login identifiers and revoke credentials atomically.
+        return databaseClient.sql("""
+                WITH target AS MATERIALIZED (
+                    SELECT id, email FROM users WHERE id = :userId AND status <> -1 AND role = 'user' FOR UPDATE
+                ), deleted AS (
+                    UPDATE users SET status = -1, token_version = token_version + 1,
+                        username = :deletedUsername, email = NULL, password = '', nickname = '已删除用户',
+                        avatar = NULL, updated_at = CURRENT_TIMESTAMP
+                    WHERE id IN (SELECT id FROM target) RETURNING id
+                ), identities AS (
+                    DELETE FROM user_identity_bindings WHERE user_id IN (SELECT id FROM deleted)
+                ), reset_tokens AS (
+                    DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM deleted)
+                ), email_codes AS (
+                    DELETE FROM email_verification_codes WHERE email IN (SELECT email FROM target)
+                ), reads AS (
+                    DELETE FROM user_notification_reads WHERE user_id IN (SELECT id FROM deleted)
+                )
+                SELECT COUNT(*) AS deleted_count FROM deleted
+                """).bind("userId", userId)
+                .bind("deletedUsername", "deleted_" + java.util.UUID.randomUUID().toString().replace("-", ""))
+                .map((row, metadata) -> row.get("deleted_count", Long.class)).one();
+    }
+}

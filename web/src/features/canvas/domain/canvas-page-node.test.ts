@@ -1,0 +1,271 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { createBackgroundNode, createImageNode, createStoryboardNode, createTextNode } from "../constants.ts";
+import { MINIMUM_CONTENT_NODE_DIMENSION } from "../utils/canvas-node-size.ts";
+import {
+    applyCanvasNodeConfig,
+    createCanvasConnection,
+    findCanvasConnectionDropTarget,
+    normalizeCanvasConnection,
+    resetInterruptedCanvasNodes,
+    selectCanvasNodesInRectangle,
+    updateCanvasNodeSelection,
+    moveCanvasNodesFromOrigins,
+    applyGeneratedImageToBatchNodes,
+    synchronizeImageBatchRootExecution,
+    expandBackgroundBoardsToMembers,
+    reconcileBackgroundBoardMembership,
+    normalizeBackgroundBoardMembers,
+    findNonOverlappingCanvasNodePosition,
+} from "./canvas-page-node.ts";
+
+test("新节点位置会避开已有节点并保留首选位置附近的布局", () => {
+    const existing = createImageNode({ id: "image-1", position: { x: 0, y: 0 } });
+    const position = findNonOverlappingCanvasNodePosition([existing], { x: 0, y: 0 }, 200, 120);
+
+    assert.ok(position.x !== 0 || position.y !== 0);
+    assert.ok(position.x >= existing.frame.position.x + existing.frame.width + 54 || position.x + 200 <= existing.frame.position.x - 54 || position.y >= existing.frame.position.y + existing.frame.height + 54 || position.y + 120 <= existing.frame.position.y - 54);
+});
+
+test("背景板默认尺寸并可扩展包裹成员", () => {
+    const board = createBackgroundNode({ id: "background-1", position: { x: 0, y: 0 } });
+    const member = createTextNode({ id: "text-1", position: { x: 0, y: 0 } });
+    const withMember = { ...board, memberNodeIds: [member.id] };
+    const expanded = expandBackgroundBoardsToMembers([withMember, member])[0];
+    assert.equal(board.frame.width, 960);
+    assert.ok(expanded.frame.width >= member.frame.width + 64);
+});
+
+test("节点从背景板外拖入时建立归属，完全移出时解除归属", () => {
+    const board = createBackgroundNode({ id: "background-1", position: { x: 0, y: 0 } });
+    const member = createTextNode({ id: "text-1", position: { x: 100, y: 100 } });
+    const entered = reconcileBackgroundBoardMembership([board, member], new Set([member.id]), new Set());
+    assert.deepEqual((entered[0].kind === "background" ? entered[0].memberNodeIds : []), [member.id]);
+    const movedOut = { ...member, frame: { ...member.frame, position: { x: 2000, y: 2000 } } };
+    const exited = reconcileBackgroundBoardMembership([entered[0], movedOut], new Set([member.id]), new Set([member.id]));
+    assert.deepEqual((exited[0].kind === "background" ? exited[0].memberNodeIds : []), []);
+});
+
+test("重叠背景板按场景中靠后的背景板建立唯一归属", () => {
+    const firstBoard = createBackgroundNode({ id: "background-1", position: { x: 0, y: 0 } });
+    const secondBoard = createBackgroundNode({ id: "background-2", position: { x: 0, y: 0 } });
+    const member = createTextNode({ id: "text-1", position: { x: 100, y: 100 } });
+    const [normalizedFirst, normalizedSecond] = reconcileBackgroundBoardMembership([firstBoard, secondBoard, member], new Set([member.id]), new Set());
+    assert.deepEqual(normalizedFirst.kind === "background" ? normalizedFirst.memberNodeIds : [], []);
+    assert.deepEqual(normalizedSecond.kind === "background" ? normalizedSecond.memberNodeIds : [], [member.id]);
+});
+
+test("恢复文档时清理不存在的成员和背景板互相引用", () => {
+    const board = createBackgroundNode({ id: "background-1", position: { x: 0, y: 0 }, memberNodeIds: ["missing", "background-2"] });
+    const otherBoard = createBackgroundNode({ id: "background-2", position: { x: 0, y: 0 }, memberNodeIds: [board.id] });
+    const [normalized] = normalizeBackgroundBoardMembers([board, otherBoard]);
+    assert.deepEqual(normalized.kind === "background" ? normalized.memberNodeIds : [], []);
+});
+
+test("修改空图片节点尺寸配置时保持中心点不变", () => {
+    const node = createImageNode({ id: "image-1", position: { x: 100, y: 80 } });
+    const updated = applyCanvasNodeConfig(node, { size: "16:9" });
+
+    assert.equal(updated.kind, "image");
+    assert.equal(updated.generation.size, "16:9");
+    assert.equal(updated.frame.position.x + updated.frame.width / 2, node.frame.position.x + node.frame.width / 2);
+    assert.equal(updated.frame.position.y + updated.frame.height / 2, node.frame.position.y + node.frame.height / 2);
+});
+
+test("已有内容的图片节点修改配置时不自动调整尺寸", () => {
+    const node = createImageNode({ id: "image-1", position: { x: 100, y: 80 } });
+    node.content.source = "image:stored";
+
+    const updated = applyCanvasNodeConfig(node, { size: "16:9" });
+
+    assert.deepEqual(updated.frame, node.frame);
+});
+
+test("文本和分镜节点按比例调整时短边至少为500", () => {
+    const text = createTextNode({ id: "text-1", position: { x: 0, y: 0 } });
+    const storyboard = createStoryboardNode({ id: "storyboard-1", position: { x: 0, y: 0 } });
+
+    const portraitText = applyCanvasNodeConfig(text, { size: "9:16" });
+    const landscapeStoryboard = applyCanvasNodeConfig(storyboard, { size: "16:9" });
+
+    assert.equal(portraitText.frame.width, MINIMUM_CONTENT_NODE_DIMENSION);
+    assert.equal(Math.round(portraitText.frame.height), 1067);
+    assert.equal(Math.round(landscapeStoryboard.frame.width), 1067);
+    assert.equal(landscapeStoryboard.frame.height, MINIMUM_CONTENT_NODE_DIMENSION);
+});
+
+test("连接使用明确的源端点和目标端点", () => {
+    const first = createTextNode({ id: "text-1", position: { x: 0, y: 0 } });
+    const second = createImageNode({ id: "image-1", position: { x: 400, y: 0 } });
+
+    assert.deepEqual(normalizeCanvasConnection(first.id, second.id, [first, second]), {
+        source: { nodeId: "text-1" },
+        target: { nodeId: "image-1" },
+    });
+    assert.deepEqual(createCanvasConnection("connection-1", first.id, second.id, "right", "left"), {
+        id: "connection-1",
+        source: { nodeId: "text-1", portId: "right" },
+        target: { nodeId: "image-1", portId: "left" },
+    });
+});
+
+test("刷新后只把没有服务端任务标识的运行节点标记为失败", () => {
+    const resumable = createImageNode({ id: "image-1", position: { x: 0, y: 0 } });
+    resumable.execution = { phase: "running", taskId: "task-1" };
+    const interrupted = createImageNode({ id: "image-2", position: { x: 0, y: 0 } });
+    interrupted.execution = { phase: "running" };
+
+    const [first, second] = resetInterruptedCanvasNodes([resumable, interrupted]);
+
+    assert.equal(first.execution.phase, "running");
+    assert.equal(second.execution.phase, "failed");
+    assert.equal(second.execution.errorMessage, "页面刷新后生成已中断，请重新生成。");
+});
+
+test("刷新后会把同步分镜生成标记为可重新生成", () => {
+    const storyboard = createStoryboardNode({ id: "storyboard-1", position: { x: 0, y: 0 } });
+    storyboard.execution = { phase: "running" };
+
+    const [restored] = resetInterruptedCanvasNodes([storyboard]);
+
+    assert.equal(restored.execution.phase, "failed");
+    assert.equal(restored.execution.errorMessage, "页面刷新后生成已中断，请重新生成。");
+});
+
+test("批次根节点跟随子节点判定：子节点可恢复时保持运行中", () => {
+    const root = createImageNode({ id: "image-root", position: { x: 0, y: 0 } });
+    root.execution = { phase: "running" };
+    root.grouping = { ...root.grouping, isRoot: true, childIds: ["image-child-1", "image-child-2"] };
+    const resumableChild = createImageNode({ id: "image-child-1", position: { x: 0, y: 0 } });
+    resumableChild.execution = { phase: "running", taskId: "task-1" };
+    const interruptedChild = createImageNode({ id: "image-child-2", position: { x: 0, y: 0 } });
+    interruptedChild.execution = { phase: "running" };
+
+    const [resumableRoot, , interruptedRootChild] = resetInterruptedCanvasNodes([root, resumableChild, interruptedChild]);
+
+    assert.equal(resumableRoot.execution.phase, "running");
+    assert.equal(interruptedRootChild.execution.phase, "failed");
+});
+
+test("批次根节点没有可恢复子节点时仍然标记失败", () => {
+    const root = createImageNode({ id: "image-root", position: { x: 0, y: 0 } });
+    root.execution = { phase: "running" };
+    root.grouping = { ...root.grouping, isRoot: true, childIds: ["image-child-1"] };
+    const child = createImageNode({ id: "image-child-1", position: { x: 0, y: 0 } });
+    child.execution = { phase: "running" };
+
+    const [restoredRoot] = resetInterruptedCanvasNodes([root, child]);
+
+    assert.equal(restoredRoot.execution.phase, "failed");
+    assert.equal(restoredRoot.execution.errorMessage, "页面刷新后生成已中断，请重新生成。");
+});
+
+test("框选只返回与矩形相交的节点标识", () => {
+    const first = createTextNode({ id: "text-1", position: { x: 10, y: 10 } });
+    const second = createImageNode({ id: "image-1", position: { x: 500, y: 500 } });
+
+    assert.deepEqual(selectCanvasNodesInRectangle([first, second], { left: 0, top: 0, right: 200, bottom: 200 }), ["text-1"]);
+});
+
+test("连接拖放优先命中节点内部", () => {
+    const source = createTextNode({ id: "text-1", position: { x: 0, y: 0 } });
+    const target = createImageNode({ id: "image-1", position: { x: 400, y: 0 } });
+
+    assert.deepEqual(
+        findCanvasConnectionDropTarget([source, target], "text-1", "source", { x: 450, y: 100 }, 1, 32, 40),
+        { nodeId: "image-1", isNearNode: true },
+    );
+});
+
+test("追加选择会切换目标节点，普通选择只保留目标节点", () => {
+    assert.deepEqual([...updateCanvasNodeSelection(new Set(["node-1"]), "node-2", false)], ["node-2"]);
+    assert.deepEqual([...updateCanvasNodeSelection(new Set(["node-1"]), "node-2", true)], ["node-1", "node-2"]);
+    assert.deepEqual([...updateCanvasNodeSelection(new Set(["node-1", "node-2"]), "node-2", true)], ["node-1"]);
+});
+
+test("拖动节点按照初始位置统一偏移", () => {
+    const node = createTextNode({ id: "text-1", position: { x: 10, y: 20 } });
+    const [moved] = moveCanvasNodesFromOrigins([node], [{ id: "text-1", x: 10, y: 20 }], 30, -5);
+    assert.deepEqual(moved.frame.position, { x: 40, y: 15 });
+});
+
+test("批量图片生成结果只写入目标子节点并同步根节点进度", () => {
+    const root = createImageNode({ id: "root", position: { x: 0, y: 0 } });
+    root.grouping = { ...root.grouping, isRoot: true, childIds: ["child-1", "child-2"] };
+    root.execution = { phase: "running", progress: 0 };
+    const firstChild = createImageNode({ id: "child-1", position: { x: 400, y: 0 } });
+    firstChild.grouping = { ...firstChild.grouping, rootId: "root" };
+    firstChild.execution = { phase: "running" };
+    const secondChild = createImageNode({ id: "child-2", position: { x: 800, y: 0 } });
+    secondChild.grouping = { ...secondChild.grouping, rootId: "root" };
+    secondChild.execution = { phase: "running" };
+
+    const updated = applyGeneratedImageToBatchNodes([root, firstChild, secondChild], {
+        rootId: "root",
+        targetId: "child-1",
+        attributes: { content: "image:generated", status: "success" },
+        width: 200,
+        height: 100,
+    });
+
+    const updatedRoot = updated[0];
+    const updatedChild = updated[1];
+    assert.equal(updatedRoot.kind === "image" ? updatedRoot.grouping.primaryImageId : "", undefined);
+    assert.equal(updatedRoot.kind === "image" ? updatedRoot.content.source : "", "");
+    assert.equal(updatedRoot.execution.phase, "running");
+    assert.equal(updatedRoot.execution.progress, 50);
+    assert.equal(updatedChild.kind === "image" ? updatedChild.content.source : "", "image:generated");
+});
+
+test("批量图片生成结果把服务端风格快照同步到根节点和子节点", () => {
+    const root = createImageNode({ id: "root", position: { x: 0, y: 0 } });
+    root.grouping = { ...root.grouping, isRoot: true, childIds: ["child-1"] };
+    root.execution = { phase: "running" };
+    const child = createImageNode({ id: "child-1", position: { x: 400, y: 0 } });
+    child.grouping = { ...child.grouping, rootId: "root" };
+    child.execution = { phase: "running" };
+
+    const snapshot = { id: 7, name: "电影感", generationType: "image" as const, stylePrompt: "cinematic" };
+    const updated = applyGeneratedImageToBatchNodes([root, child], {
+        rootId: "root",
+        targetId: "child-1",
+        attributes: { content: "image:generated", status: "success", generationStyleIds: [7], generationStyleSnapshots: [snapshot] },
+        width: 200,
+        height: 100,
+    });
+
+    assert.deepEqual(updated[0].kind === "image" ? updated[0].generation.generationStyleSnapshots : [], [snapshot]);
+    assert.deepEqual(updated[1].kind === "image" ? updated[1].generation.generationStyleSnapshots : [], [snapshot]);
+});
+
+test("批量图片全部结束后根节点汇总部分失败状态", () => {
+    const root = createImageNode({ id: "root", position: { x: 0, y: 0 } });
+    root.grouping = { ...root.grouping, isRoot: true, childIds: ["child-1", "child-2"] };
+    root.execution = { phase: "running", progress: 50 };
+    const succeededChild = createImageNode({ id: "child-1", position: { x: 400, y: 0 } });
+    succeededChild.grouping = { ...succeededChild.grouping, rootId: "root" };
+    succeededChild.execution = { phase: "succeeded" };
+    const failedChild = createImageNode({ id: "child-2", position: { x: 800, y: 0 } });
+    failedChild.grouping = { ...failedChild.grouping, rootId: "root" };
+    failedChild.execution = { phase: "failed", errorMessage: "生成失败" };
+
+    const [updatedRoot] = synchronizeImageBatchRootExecution([root, succeededChild, failedChild], root.id);
+
+    assert.equal(updatedRoot.execution.phase, "failed");
+    assert.equal(updatedRoot.execution.progress, 100);
+    assert.equal(updatedRoot.execution.errorMessage, "部分图片生成失败（成功 1/2）");
+});
+
+
+test("重新载入保留已有分镜的真实失败状态", () => {
+    const node = createStoryboardNode({ id: "failed-storyboard", position: { x: 0, y: 0 } });
+    node.storyboard.shots = [{ id: "shot-1", shotNumber: 1, durationSeconds: 5, visualDescription: "街道", shotSize: "远景", lightingAtmosphere: "", dialogueVoiceover: "", soundEffect: "", cameraMovement: "", finalPrompt: "原提示词", assetIds: ["asset-1"] }];
+    node.storyboard.assets = [{ id: "asset-1", kind: "scene", name: "街道", description: "原资产" }];
+    for (const errorMessage of ["分镜Agent返回的镜头景别不合法", "分镜Agent返回了不支持的资产类别", "模型服务暂时不可用"]) {
+        node.execution = { phase: "failed", errorMessage };
+        const [restored] = resetInterruptedCanvasNodes([node]);
+        assert.equal(restored, node);
+        assert.deepEqual(restored.execution, { phase: "failed", errorMessage });
+    }
+});

@@ -1,0 +1,546 @@
+package com.inspirestudio.service;
+
+import com.inspirestudio.common.BusinessException;
+import com.inspirestudio.common.ErrorCode;
+import com.inspirestudio.dto.CreditDtos;
+import com.inspirestudio.dto.InvitationDtos;
+import com.inspirestudio.dto.PersistenceDtos;
+import com.inspirestudio.repository.CreditRepository;
+import com.inspirestudio.security.CurrentUserProvider;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.reactive.TransactionalOperator;
+import reactor.core.publisher.Mono;
+
+/**
+ * @title        CreditService.java
+ * @description  用户积分账户与流水服务
+ * @createTime   2026-07-16 14:00:00
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class CreditService {
+
+    /** 积分统计业务时区 */
+    private static final ZoneId CREDIT_TIME_ZONE = ZoneId.of("Asia/Shanghai");
+
+    /** 按日趋势聚合单位 */
+    private static final String TREND_UNIT_DAY = "day";
+
+    /** 按月趋势聚合单位 */
+    private static final String TREND_UNIT_MONTH = "month";
+
+    /** 初始积分流水类型 */
+    public static final String TRANSACTION_INITIAL_GRANT = "initial_grant";
+
+    /** 任务扣费流水类型 */
+    public static final String TRANSACTION_TASK_CHARGE = "task_charge";
+
+    /** 任务退款流水类型 */
+    public static final String TRANSACTION_TASK_REFUND = "task_refund";
+
+    /** 管理员调整流水类型 */
+    public static final String TRANSACTION_ADMIN_ADJUSTMENT = "admin_adjustment";
+
+    /** 邀请注册奖励流水类型 */
+    public static final String TRANSACTION_INVITATION_REWARD = "invitation_reward";
+
+    /** 每日签到发放流水类型 */
+    public static final String TRANSACTION_DAILY_CHECK_IN = "daily_check_in";
+
+    /** 积分过期作废流水类型 */
+    public static final String TRANSACTION_CREDIT_EXPIRED = "credit_expired";
+
+    /** 积分仓储 */
+    private final CreditRepository creditRepository;
+
+    /** 会过期的积分发放批次服务 */
+    private final CreditGrantService creditGrantService;
+
+    /** 模型配置服务，用于解析用户可见的模型展示名称 */
+    private final PersistenceService persistenceService;
+
+    /** 当前用户提供器 */
+    private final CurrentUserProvider currentUserProvider;
+
+    /** 响应式事务操作器 */
+    private final TransactionalOperator transactionalOperator;
+
+    /**
+     * 查询积分设置。
+     *
+     * @return Mono<CreditSettingsResponse> 积分设置
+     */
+    public Mono<CreditDtos.CreditSettingsResponse> getSettings() {
+        return creditRepository.getInitialCredits().map(CreditDtos.CreditSettingsResponse::new);
+    }
+
+    /**
+     * 更新积分设置。
+     *
+     * @param request UpdateCreditSettingsRequest 积分设置请求
+     * @return Mono<CreditSettingsResponse> 保存后的积分设置
+     */
+    public Mono<CreditDtos.CreditSettingsResponse> updateSettings(CreditDtos.UpdateCreditSettingsRequest request) {
+        return creditRepository.updateInitialCredits(request.initialCredits())
+                .thenReturn(new CreditDtos.CreditSettingsResponse(request.initialCredits()));
+    }
+
+    /**
+     * 查询邀请奖励设置。
+     *
+     * @return 邀请奖励设置
+     */
+    public Mono<InvitationDtos.InvitationRewardSettingsResponse> getInvitationRewardSettings() {
+        return creditRepository.getInvitationRewardCredits()
+                .map(InvitationDtos.InvitationRewardSettingsResponse::new);
+    }
+
+    /**
+     * 独立更新邀请奖励设置。
+     *
+     * @param request 邀请奖励设置请求
+     * @return 保存后的邀请奖励设置
+     */
+    public Mono<InvitationDtos.InvitationRewardSettingsResponse> updateInvitationRewardSettings(
+            InvitationDtos.UpdateInvitationRewardSettingsRequest request) {
+        return creditRepository.updateInvitationRewardCredits(request.invitationRewardCredits())
+                .thenReturn(new InvitationDtos.InvitationRewardSettingsResponse(request.invitationRewardCredits()));
+    }
+
+    /**
+     * 为新用户创建积分账户并记录初始发放流水。
+     *
+     * @param userId Long 新用户ID
+     * @return Mono<Void> 操作完成信号
+     */
+    public Mono<Void> initializeAccount(Long userId) {
+        return creditRepository.getInitialCredits()
+                .flatMap(initialCredits -> creditRepository.createAccount(userId, initialCredits)
+                        .then(initialCredits == 0
+                                ? Mono.empty()
+                                : creditRepository.createTransaction(userId, TRANSACTION_INITIAL_GRANT, null, initialCredits, initialCredits, "新用户初始发放")));
+    }
+
+    /**
+     * 为邀请人发放新用户注册奖励。
+     * <p>
+     * 奖励配置为0时不修改余额、不创建流水；正数奖励由被邀请用户唯一索引保证最多发放一次。
+     *
+     * @param inviterUserId 邀请人用户ID
+     * @param invitedUserId 被邀请新用户ID
+     * @return 操作完成信号
+     */
+    public Mono<Void> grantInvitationReward(Long inviterUserId, Long invitedUserId) {
+        return creditRepository.getInvitationRewardCredits()
+                .flatMap(rewardCredits -> {
+                    if (rewardCredits == 0) {
+                        return Mono.empty();
+                    }
+                    return creditRepository.claimInvitationRewardTransaction(
+                                    inviterUserId, invitedUserId, rewardCredits, "邀请新用户注册奖励")
+                            .flatMap(transactionId -> creditRepository.changeBalance(inviterUserId, rewardCredits)
+                                    .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.BUSINESS_ERROR, "邀请人积分账户不存在")))
+                                    .flatMap(balance -> creditRepository.updateTransactionBalance(transactionId, balance)
+                                            .doOnSuccess(ignored -> log.info("邀请注册奖励已发放: inviterUserId={}, invitedUserId={}, credits={}, balanceAfter={}",
+                                                    inviterUserId, invitedUserId, rewardCredits, balance))))
+                            .then();
+                })
+                .as(transactionalOperator::transactional);
+    }
+
+    /**
+     * 扣除AI任务积分。
+     *
+     * @param userId Long 用户ID
+     * @param taskId String AI任务ID
+     * @param credits int 应扣积分
+     * @param taskType String 任务类型
+     * @param generationSource String 生成来源
+     * @return Mono<Void> 操作完成信号
+     */
+    public Mono<Void> chargeTask(Long userId, String taskId, int credits, String taskType, String generationSource) {
+        if (credits == 0) {
+            return Mono.empty();
+        }
+        return creditRepository.claimTaskTransaction(userId, taskId, TRANSACTION_TASK_CHARGE, -credits, taskReason(taskType, "扣费"), generationSource)
+                .flatMap(transactionId -> creditGrantService.consumeCredits(userId, credits)
+                        .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.BUSINESS_ERROR, "积分不足，无法创建生成任务")))
+                        .flatMap(balance -> creditRepository.updateTransactionBalance(transactionId, balance)))
+                .then();
+    }
+
+    /**
+     * 退还失败或取消AI任务的原始扣费积分。
+     *
+     * @param userId Long 用户ID
+     * @param taskId String AI任务ID
+     * @param taskType String 任务类型
+     * @return Mono<Void> 操作完成信号
+     */
+    public Mono<Void> refundTask(Long userId, String taskId, String taskType) {
+        return creditRepository.getTaskChargeAmount(taskId)
+                .flatMap(credits -> creditRepository.claimTaskTransaction(userId, taskId, TRANSACTION_TASK_REFUND, credits, taskReason(taskType, "退款"), null)
+                        .flatMap(transactionId -> creditRepository.changeBalance(userId, credits)
+                                .flatMap(balance -> creditRepository.updateTransactionBalance(transactionId, balance)))
+                        .then())
+                .then();
+    }
+
+    /**
+     * 扣除同步业务操作积分。
+     * <p>
+     * 操作标识只在当前业务的扣费与退款之间关联，不会改变普通文本生成的零积分规则。
+     *
+     * @param userId Long 用户ID
+     * @param operationId String 稳定操作标识
+     * @param credits int 应扣积分
+     * @param operationName String 业务名称
+     * @return Mono<Void> 操作完成信号
+     */
+    public Mono<Void> chargeOperation(Long userId, String operationId, int credits, String operationName) {
+        if (credits < 0) {
+            return Mono.error(new BusinessException(ErrorCode.PARAM_INVALID, "积分扣费金额不能小于0"));
+        }
+        if (credits == 0) {
+            return Mono.empty();
+        }
+        String chargeReason = operationReason(operationName, "扣费", operationId);
+        return creditRepository.claimOperationTransaction(userId, operationId, TRANSACTION_TASK_CHARGE, -credits, chargeReason)
+                .flatMap(transactionId -> creditGrantService.consumeCredits(userId, credits)
+                        .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.BUSINESS_ERROR, "积分不足，无法执行" + operationName)))
+                        .flatMap(balance -> creditRepository.updateTransactionBalance(transactionId, balance)))
+                .then()
+                .as(transactionalOperator::transactional);
+    }
+
+    /**
+     * 退还失败同步业务操作的原始扣费积分。
+     *
+     * @param userId Long 用户ID
+     * @param operationId String 稳定操作标识
+     * @param operationName String 业务名称
+     * @return Mono<Void> 操作完成信号
+     */
+    public Mono<Void> refundOperation(Long userId, String operationId, String operationName) {
+        String chargeReason = operationReason(operationName, "扣费", operationId);
+        String refundReason = operationReason(operationName, "退款", operationId);
+        return creditRepository.getOperationChargeAmount(userId, chargeReason)
+                .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.BUSINESS_ERROR, "未找到需要退款的" + operationName + "扣费流水")))
+                .flatMap(credits -> creditRepository.claimOperationTransaction(userId, operationId, TRANSACTION_TASK_REFUND, credits, refundReason)
+                        .flatMap(transactionId -> creditRepository.changeBalance(userId, credits)
+                                .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.BUSINESS_ERROR, operationName + "退款失败")))
+                                .flatMap(balance -> creditRepository.updateTransactionBalance(transactionId, balance)))
+                        .then())
+                .then()
+                .as(transactionalOperator::transactional);
+    }
+
+    /**
+     * 管理员增减用户积分。
+     *
+     * @param userId Long 目标用户ID
+     * @param operatorUserId Long 操作管理员ID
+     * @param changeAmount int 积分变动值
+     * @param reason String 调整原因
+     * @return Mono<CreditBalanceResponse> 调整后的用户积分余额
+     */
+    public Mono<CreditDtos.CreditBalanceResponse> adjustUserCredits(Long userId, Long operatorUserId, int changeAmount, String reason) {
+        if (changeAmount == 0) {
+            return Mono.error(new BusinessException(ErrorCode.PARAM_INVALID, "积分变动值不能为0"));
+        }
+        Mono<Integer> balanceChange = changeAmount > 0
+                ? creditRepository.changeBalance(userId, changeAmount)
+                : creditGrantService.consumeCredits(userId, -changeAmount);
+        return balanceChange
+                .switchIfEmpty(Mono.error(new BusinessException(ErrorCode.BUSINESS_ERROR, "积分不足，无法完成扣减")))
+                .flatMap(balance -> creditRepository.createTransaction(userId, TRANSACTION_ADMIN_ADJUSTMENT, operatorUserId, changeAmount, balance, reason.trim())
+                        .thenReturn(new CreditDtos.CreditBalanceResponse(userId, balance)))
+                .as(transactionalOperator::transactional);
+    }
+
+    /**
+     * 查询当前用户的积分消耗概览。
+     *
+     * @param startDate LocalDate 筛选起始日期
+     * @param endDate LocalDate 筛选结束日期
+     * @param generationType String 图片或视频任务类型，可为空
+     * @param trendUnit String 按日或按月聚合单位
+     * @return Mono<CreditOverviewResponse> 积分消耗概览
+     */
+    public Mono<CreditDtos.CreditOverviewResponse> getCreditOverview(LocalDate startDate, LocalDate endDate, String generationType, String trendUnit) {
+        return currentUserProvider.currentUserId().flatMap(userId -> persistenceService.getPlatformModelConfigs()
+                .map(CreditService::displayNameIndex)
+                .zipWith(queryCreditOverview(userId, startDate, endDate, generationType, trendUnit), CreditService::applyDisplayNames));
+    }
+
+    /**
+     * 查询管理员可见的积分消耗概览。
+     *
+     * @param userId Long 用户ID，可为空表示全部用户
+     * @param startDate LocalDate 筛选起始日期
+     * @param endDate LocalDate 筛选结束日期
+     * @param generationType String 图片或视频任务类型，可为空
+     * @param trendUnit String 按日或按月聚合单位
+     * @return Mono<CreditOverviewResponse> 积分消耗概览
+     */
+    public Mono<CreditDtos.CreditOverviewResponse> getAdminCreditOverview(Long userId, LocalDate startDate, LocalDate endDate, String generationType, String trendUnit) {
+        return Mono.defer(() -> queryCreditOverview(userId, startDate, endDate, generationType, trendUnit));
+    }
+
+    /**
+     * 分页查询当前用户的积分明细（含增加与消耗）。
+     *
+     * @param startDate LocalDate 筛选起始日期
+     * @param endDate LocalDate 筛选结束日期
+     * @param direction String 变动方向：all 全部 / add 增加 / spend 消耗，可为空默认全部
+     * @param source String 来源筛选：image/video/task_refund/card_redeem/admin_adjustment/initial_grant/invitation_reward/daily_check_in/credit_expired，可为空
+     * @param page int 页码
+     * @param pageSize int 每页数量
+     * @return Mono<UserCreditTransactionListResponse> 积分明细
+     */
+    public Mono<CreditDtos.UserCreditTransactionListResponse> listCreditTransactions(LocalDate startDate, LocalDate endDate, String direction, String source, int page, int pageSize) {
+        if (page < 1 || pageSize < 1 || pageSize > 100) {
+            return Mono.error(new BusinessException(ErrorCode.PARAM_INVALID, "分页参数不合法"));
+        }
+        return currentUserProvider.currentUserId().flatMap(userId -> {
+            CreditRepository.UserCreditQuery query = createUserCreditQuery(userId, startDate, endDate, direction, source);
+            return Mono.zip(
+                            persistenceService.getPlatformModelConfigs().map(CreditService::displayNameIndex),
+                            creditRepository.listUserTransactions(query, page, pageSize).collectList(),
+                            creditRepository.countUserTransactions(query))
+                    .map(result -> {
+                        List<CreditDtos.UserCreditTransactionItem> transactions = result.getT2().stream()
+                                .map(item -> new CreditDtos.UserCreditTransactionItem(item.id(), item.transactionType(), item.direction(),
+                                        item.generationType(),
+                                        resolveModelDisplayName(result.getT1(), item.generationType(), item.model()),
+                                        item.generationSource(), item.changeAmount(), item.reason(), item.balanceAfter(), item.invitedUserId(), item.createdAt()))
+                                .toList();
+                        return new CreditDtos.UserCreditTransactionListResponse(transactions, result.getT3());
+                    });
+        });
+    }
+
+    /**
+     * 分页查询管理员可见的积分明细（含增加与消耗）。
+     *
+     * @param userId Long 用户ID，可为空表示全部用户
+     * @param startDate LocalDate 筛选起始日期
+     * @param endDate LocalDate 筛选结束日期
+     * @param generationType String 生成类型筛选：image/video 表示只看对应生成任务的流水，可为空表示全部来源
+     * @param page int 页码
+     * @param pageSize int 每页数量
+     * @return Mono<AdminCreditTransactionListResponse> 积分明细
+     */
+    public Mono<CreditDtos.AdminCreditTransactionListResponse> listAdminCreditTransactions(Long userId, LocalDate startDate, LocalDate endDate, String generationType, int page, int pageSize) {
+        if (page < 1 || pageSize < 1 || pageSize > 100) {
+            return Mono.error(new BusinessException(ErrorCode.PARAM_INVALID, "分页参数不合法"));
+        }
+        return Mono.defer(() -> {
+            CreditRepository.UserCreditQuery query = createUserCreditQuery(userId, startDate, endDate, null, generationType);
+            return Mono.zip(
+                            creditRepository.listAdminCreditTransactions(query, page, pageSize).collectList(),
+                            creditRepository.countAdminTransactions(query))
+                    .map(result -> new CreditDtos.AdminCreditTransactionListResponse(result.getT1(), result.getT2()));
+        });
+    }
+
+    /**
+     * 查询指定范围内的积分消耗概览。
+     *
+     * @param userId Long 用户ID，可为空表示全部用户
+     * @param startDate LocalDate 筛选起始日期
+     * @param endDate LocalDate 筛选结束日期
+     * @param generationType String 图片或视频任务类型，可为空
+     * @param trendUnit String 按日或按月聚合单位
+     * @return Mono<CreditOverviewResponse> 积分消耗概览
+     */
+    private Mono<CreditDtos.CreditOverviewResponse> queryCreditOverview(Long userId, LocalDate startDate, LocalDate endDate, String generationType, String trendUnit) {
+        CreditRepository.CreditConsumptionQuery query = createConsumptionQuery(userId, startDate, endDate, generationType);
+        validateTrendUnit(trendUnit);
+        return Mono.zip(
+                        creditRepository.listGenerationTypeDistribution(query).collectList(),
+                        creditRepository.listModelDistribution(query).collectList(),
+                        creditRepository.listTrend(query, trendUnit).collectList())
+                .map(result -> new CreditDtos.CreditOverviewResponse(
+                        result.getT1(),
+                        result.getT2(),
+                        completeTrend(query.startDate(), query.endDate(), trendUnit, result.getT3())));
+    }
+
+    /**
+     * 构建并校验积分消耗查询条件。
+     *
+     * @param userId Long 用户ID，可为空表示全部用户
+     * @param startDate LocalDate 筛选起始日期
+     * @param endDate LocalDate 筛选结束日期
+     * @param generationType String 图片或视频任务类型，可为空
+     * @return CreditConsumptionQuery 已校验的查询条件
+     */
+    private CreditRepository.CreditConsumptionQuery createConsumptionQuery(Long userId, LocalDate startDate, LocalDate endDate, String generationType) {
+        if (startDate == null || endDate == null || startDate.isAfter(endDate)) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "积分筛选日期不合法");
+        }
+        if (generationType != null && !List.of("image", "video").contains(generationType)) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "积分筛选类型仅支持image或video");
+        }
+        OffsetDateTime startAt = startDate.atStartOfDay(CREDIT_TIME_ZONE).toOffsetDateTime();
+        OffsetDateTime endAt = endDate.plusDays(1).atStartOfDay(CREDIT_TIME_ZONE).toOffsetDateTime();
+        return new CreditRepository.CreditConsumptionQuery(userId, startDate, endDate, startAt, endAt, generationType);
+    }
+
+    /**
+     * 构建并校验用户统一积分明细查询条件。
+     *
+     * @param userId Long 用户ID
+     * @param startDate LocalDate 筛选起始日期
+     * @param endDate LocalDate 筛选结束日期
+     * @param direction String 变动方向：all/add/spend
+     * @param source String 来源筛选：image/video/task_refund/card_redeem/admin_adjustment/initial_grant/invitation_reward/daily_check_in/credit_expired
+     * @return UserCreditQuery 已校验的查询条件
+     */
+    private CreditRepository.UserCreditQuery createUserCreditQuery(Long userId, LocalDate startDate, LocalDate endDate, String direction, String source) {
+        if (startDate == null || endDate == null || startDate.isAfter(endDate)) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "积分筛选日期不合法");
+        }
+        if (direction != null && !List.of("all", "add", "spend").contains(direction)) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "积分方向仅支持all、add或spend");
+        }
+        if (source != null && !List.of("image", "video", "task_refund", "card_redeem", "wechat_pay", "admin_adjustment", "initial_grant", "invitation_reward", TRANSACTION_DAILY_CHECK_IN, TRANSACTION_CREDIT_EXPIRED).contains(source)) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "积分来源筛选不合法");
+        }
+        OffsetDateTime startAt = startDate.atStartOfDay(CREDIT_TIME_ZONE).toOffsetDateTime();
+        OffsetDateTime endAt = endDate.plusDays(1).atStartOfDay(CREDIT_TIME_ZONE).toOffsetDateTime();
+        return new CreditRepository.UserCreditQuery(userId, startDate, endDate, startAt, endAt, direction, source);
+    }
+
+    /**
+     * 校验趋势聚合单位。
+     *
+     * @param trendUnit String 按日或按月聚合单位
+     * @return void 无返回值
+     */
+    private void validateTrendUnit(String trendUnit) {
+        if (!TREND_UNIT_DAY.equals(trendUnit) && !TREND_UNIT_MONTH.equals(trendUnit)) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "积分趋势单位仅支持day或month");
+        }
+    }
+
+    /**
+     * 为没有消耗记录的日或月补零。
+     *
+     * @param startDate LocalDate 筛选起始日期
+     * @param endDate LocalDate 筛选结束日期
+     * @param trendUnit String 按日或按月聚合单位
+     * @param trendItems List<CreditTrendItem> 已产生消耗的趋势项
+     * @return List<CreditTrendItem> 完整连续趋势项
+     */
+    private List<CreditDtos.CreditTrendItem> completeTrend(LocalDate startDate,
+                                                            LocalDate endDate,
+                                                            String trendUnit,
+                                                            List<CreditDtos.CreditTrendItem> trendItems) {
+        Map<String, Long> consumedCreditsByPeriod = new HashMap<>();
+        trendItems.forEach(item -> consumedCreditsByPeriod.put(item.period(), item.consumedCredits()));
+        LocalDate currentDate = TREND_UNIT_DAY.equals(trendUnit) ? startDate : startDate.withDayOfMonth(1);
+        LocalDate lastDate = TREND_UNIT_DAY.equals(trendUnit) ? endDate : endDate.withDayOfMonth(1);
+        DateTimeFormatter formatter = TREND_UNIT_DAY.equals(trendUnit) ? DateTimeFormatter.ISO_LOCAL_DATE : DateTimeFormatter.ofPattern("yyyy-MM");
+        java.util.ArrayList<CreditDtos.CreditTrendItem> completedTrend = new java.util.ArrayList<>();
+        while (!currentDate.isAfter(lastDate)) {
+            String period = currentDate.format(formatter);
+            completedTrend.add(new CreditDtos.CreditTrendItem(period, consumedCreditsByPeriod.getOrDefault(period, 0L)));
+            currentDate = TREND_UNIT_DAY.equals(trendUnit) ? currentDate.plusDays(1) : currentDate.plusMonths(1);
+        }
+        return completedTrend;
+    }
+
+    /**
+     * 构建模型展示名称索引。
+     * <p>
+     * 管理员可为模型配置与真实模型名不同的展示名称，用户侧积分记录应展示用户勾选时看到的名称。
+     *
+     * @param modelConfigs List<PersistenceDtos.ModelConfig> 全站模型配置
+     * @return Map<String, String> 展示名称索引，键为“模型类型|真实模型名”及“真实模型名”
+     */
+    private static Map<String, String> displayNameIndex(List<PersistenceDtos.ModelConfig> modelConfigs) {
+        Map<String, String> displayNames = new HashMap<>();
+        for (PersistenceDtos.ModelConfig config : modelConfigs) {
+            String displayName = config.displayName();
+            if (displayName == null || displayName.isBlank() || displayName.equals(config.modelName())) {
+                continue;
+            }
+            String normalizedDisplayName = displayName.trim();
+            displayNames.putIfAbsent(config.modelType() + "|" + config.modelName(), normalizedDisplayName);
+            displayNames.putIfAbsent(config.modelName(), normalizedDisplayName);
+        }
+        return displayNames;
+    }
+
+    /**
+     * 解析用户可见的模型展示名称。
+     *
+     * @param displayNames Map<String, String> 展示名称索引
+     * @param modelType String 任务类型，可为空
+     * @param model String 真实模型名
+     * @return String 展示名称，未配置时回退真实模型名
+     */
+    private static String resolveModelDisplayName(Map<String, String> displayNames, String modelType, String model) {
+        String typedDisplayName = modelType == null ? null : displayNames.get(modelType + "|" + model);
+        return typedDisplayName != null ? typedDisplayName : displayNames.getOrDefault(model, model);
+    }
+
+    /**
+     * 将积分消耗概览中的模型分布名称替换为用户可见的展示名称。
+     *
+     * @param displayNames Map<String, String> 展示名称索引
+     * @param overview CreditOverviewResponse 原始积分消耗概览
+     * @return CreditOverviewResponse 模型分布已使用展示名称的概览
+     */
+    private static CreditDtos.CreditOverviewResponse applyDisplayNames(Map<String, String> displayNames, CreditDtos.CreditOverviewResponse overview) {
+        List<CreditDtos.CreditDistributionItem> modelDistribution = overview.modelDistribution().stream()
+                .map(item -> new CreditDtos.CreditDistributionItem(resolveModelDisplayName(displayNames, null, item.name()), item.consumedCredits()))
+                .toList();
+        return new CreditDtos.CreditOverviewResponse(overview.generationTypeDistribution(), modelDistribution, overview.trend());
+    }
+
+    /**
+     * 构建任务积分流水原因。
+     *
+     * @param taskType String 任务类型
+     * @param action String 积分动作
+     * @return String 流水原因
+     */
+    private String taskReason(String taskType, String action) {
+        String label = switch (taskType == null ? "" : taskType) {
+            case "video" -> "视频";
+            case "audio" -> "语音";
+            default -> "图片";
+        };
+        return label + "生成任务" + action;
+    }
+
+    /**
+     * 构建可追溯的同步业务积分流水原因。
+     *
+     * @param operationName String 业务名称
+     * @param action String 扣费或退款
+     * @param operationId String 稳定操作标识
+     * @return String 流水原因
+     */
+    private String operationReason(String operationName, String action, String operationId) {
+        String normalizedName = operationName == null ? "业务操作" : operationName.trim();
+        String normalizedId = operationId == null ? "" : operationId.trim();
+        if (normalizedName.isEmpty() || normalizedId.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "业务积分操作标识不能为空");
+        }
+        return normalizedName + action + "（操作ID：" + normalizedId + "）";
+    }
+}

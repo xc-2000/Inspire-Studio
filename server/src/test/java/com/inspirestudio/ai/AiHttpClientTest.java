@@ -1,0 +1,437 @@
+package com.inspirestudio.ai;
+
+import com.inspirestudio.common.BusinessException;
+import com.inspirestudio.dto.AiTaskDtos;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
+/**
+ * @title        AiHttpClientTest.java
+ * @description  AI供应商HTTP调用客户端测试
+ * @createTime   2026-07-15 10:00:00
+ */
+class AiHttpClientTest {
+
+    /**
+     * OpenAI兼容格式应由服务端携带Bearer鉴权拉取模型并完成去重排序。
+     *
+     * @throws IOException 本地测试服务创建失败时抛出
+     */
+    @Test
+    void shouldFetchOpenAiCompatibleModelsFromServer() throws IOException {
+        AtomicReference<String> authorization = new AtomicReference<>();
+        AtomicReference<String> path = new AtomicReference<>();
+        HttpServer server = startJsonServer(200, "{\"data\":[{\"id\":\"model-b\"},{\"id\":\"model-a\"},{\"id\":\"model-b\"}]}", exchange -> {
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            path.set(exchange.getRequestURI().getPath());
+        });
+        try {
+            AiHttpClient client = new AiHttpClient();
+
+            List<String> models = client.fetchChannelModels(baseUrl(server) + "/v1", "secret-key", "openai").block();
+
+            Assertions.assertEquals(List.of("model-a", "model-b"), models);
+            Assertions.assertEquals("Bearer secret-key", authorization.get());
+            Assertions.assertEquals("/v1/models", path.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /** OpenAI JSON视频格式应复用标准Bearer模型列表协议。 */
+    @Test
+    void shouldFetchOpenAiJsonVideoModelsFromServer() throws IOException {
+        AtomicReference<String> authorization = new AtomicReference<>();
+        AtomicReference<String> path = new AtomicReference<>();
+        HttpServer server = startJsonServer(200, "{\"data\":[{\"id\":\"Seedance 2.0 Fast\"}]}", exchange -> {
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            path.set(exchange.getRequestURI().getPath());
+        });
+        try {
+            List<String> models = new AiHttpClient().fetchChannelModels(
+                    baseUrl(server) + "/openai/v1", "lumina-key", "openai-video-json").block();
+
+            Assertions.assertEquals(List.of("Seedance 2.0 Fast"), models);
+            Assertions.assertEquals("Bearer lumina-key", authorization.get());
+            Assertions.assertEquals("/openai/v1/models", path.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * Agnes格式应沿用OpenAI兼容的模型列表协议。
+     *
+     * @throws IOException 本地测试服务创建失败时抛出
+     */
+    @Test
+    void shouldFetchAgnesModelsWithBearerAuthentication() throws IOException {
+        AtomicReference<String> authorization = new AtomicReference<>();
+        HttpServer server = startJsonServer(200, "{\"data\":[{\"id\":\"agnes-image-2.1-flash\"}]}",
+                exchange -> authorization.set(exchange.getRequestHeaders().getFirst("Authorization")));
+        try {
+            List<String> models = new AiHttpClient().fetchChannelModels(baseUrl(server), "agnes-key", "agnes").block();
+
+            Assertions.assertEquals(List.of("agnes-image-2.1-flash"), models);
+            Assertions.assertEquals("Bearer agnes-key", authorization.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * Evolink格式应通过OpenAI兼容的模型列表接口拉取模型。
+     *
+     * @throws IOException 本地测试服务创建失败时抛出
+     */
+    @Test
+    void shouldFetchEvolinkModelsWithBearerAuthentication() throws IOException {
+        AtomicReference<String> authorization = new AtomicReference<>();
+        AtomicReference<String> path = new AtomicReference<>();
+        HttpServer server = startJsonServer(200, "{\"data\":[{\"id\":\"kling-v2.1\"}]}", exchange -> {
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            path.set(exchange.getRequestURI().getPath());
+        });
+        try {
+            List<String> models = new AiHttpClient().fetchChannelModels(baseUrl(server) + "/v1", "evolink-key", "evolink").block();
+
+            Assertions.assertEquals(List.of("kling-v2.1"), models);
+            Assertions.assertEquals("Bearer evolink-key", authorization.get());
+            Assertions.assertEquals("/v1/models", path.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * Seedance格式应使用方舟模型列表接口，并过滤已下线模型但保留即将退役模型。
+     *
+     * @throws IOException 本地测试服务创建失败时抛出
+     */
+    @Test
+    void shouldFetchSeedanceModelsAndExcludeShutdownModels() throws IOException {
+        AtomicReference<String> authorization = new AtomicReference<>();
+        AtomicReference<String> path = new AtomicReference<>();
+        HttpServer server = startJsonServer(200,
+                "{\"data\":["
+                        + "{\"id\":\"doubao-seedance-2-0-260128\"},"
+                        + "{\"id\":\"doubao-seedance-2-0-fast-260128\",\"status\":\"Retiring\"},"
+                        + "{\"id\":\"old-seedance-model\",\"status\":\"Shutdown\"},"
+                        + "{\"id\":\"doubao-seedance-2-0-260128\"}]}",
+                exchange -> {
+                    authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+                    path.set(exchange.getRequestURI().getPath());
+                });
+        try {
+            List<String> models = new AiHttpClient().fetchChannelModels(
+                    baseUrl(server) + "/api/v3", "seedance-key", "seedance").block();
+
+            Assertions.assertEquals(List.of("doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128"), models);
+            Assertions.assertEquals("Bearer seedance-key", authorization.get());
+            Assertions.assertEquals("/api/v3/models", path.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * MiniMax H3 文档未提供模型列表接口，自动拉取必须明确提示手动配置。
+     *
+     * @return void 无返回值
+     */
+    @Test
+    void shouldRejectMiniMaxAutomaticModelRefresh() {
+        BusinessException exception = Assertions.assertThrows(BusinessException.class,
+                () -> new AiHttpClient().fetchChannelModels("https://api.minimaxi.com", "minimax-key", "minimax").block());
+
+        Assertions.assertTrue(exception.getMessage().contains("手动配置 MiniMax-H3"));
+    }
+
+    /**
+     * Gemini格式应使用Google鉴权头，并移除模型名称中的models前缀。
+     *
+     * @throws IOException 本地测试服务创建失败时抛出
+     */
+    @Test
+    void shouldFetchGeminiModelsWithGoogleApiKey() throws IOException {
+        AtomicReference<String> apiKey = new AtomicReference<>();
+        AtomicReference<String> path = new AtomicReference<>();
+        HttpServer server = startJsonServer(200, "{\"models\":[{\"name\":\"models/gemini-2.5-pro\"}]}", exchange -> {
+            apiKey.set(exchange.getRequestHeaders().getFirst("x-goog-api-key"));
+            path.set(exchange.getRequestURI().getPath());
+        });
+        try {
+            List<String> models = new AiHttpClient().fetchChannelModels(baseUrl(server), "gemini-key", "gemini").block();
+
+            Assertions.assertEquals(List.of("gemini-2.5-pro"), models);
+            Assertions.assertEquals("gemini-key", apiKey.get());
+            Assertions.assertEquals("/v1beta/models", path.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * Anthropic格式应使用专用鉴权头和协议版本头。
+     *
+     * @throws IOException 本地测试服务创建失败时抛出
+     */
+    @Test
+    void shouldFetchAnthropicModelsWithDedicatedHeaders() throws IOException {
+        AtomicReference<String> apiKey = new AtomicReference<>();
+        AtomicReference<String> version = new AtomicReference<>();
+        AtomicReference<String> path = new AtomicReference<>();
+        HttpServer server = startJsonServer(200, "{\"data\":[{\"id\":\"claude-sonnet-4\"}]}", exchange -> {
+            apiKey.set(exchange.getRequestHeaders().getFirst("x-api-key"));
+            version.set(exchange.getRequestHeaders().getFirst("anthropic-version"));
+            path.set(exchange.getRequestURI().getPath());
+        });
+        try {
+            List<String> models = new AiHttpClient().fetchChannelModels(baseUrl(server) + "/v1", "anthropic-key", "anthropic").block();
+
+            Assertions.assertEquals(List.of("claude-sonnet-4"), models);
+            Assertions.assertEquals("anthropic-key", apiKey.get());
+            Assertions.assertEquals("2023-06-01", version.get());
+            Assertions.assertEquals("/v1/models", path.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * 第三方错误响应应转换为包含状态码和渠道消息的业务异常。
+     *
+     * @throws IOException 本地测试服务创建失败时抛出
+     */
+    @Test
+    void shouldExposeChannelErrorMessage() throws IOException {
+        HttpServer server = startJsonServer(401, "{\"error\":{\"message\":\"密钥无效: wrong-key\"}}", exchange -> { });
+        try {
+            BusinessException exception = Assertions.assertThrows(BusinessException.class,
+                    () -> new AiHttpClient().fetchChannelModels(baseUrl(server), "wrong-key", "openai").block());
+
+            Assertions.assertTrue(exception.getMessage().contains("HTTP 401"));
+            Assertions.assertTrue(exception.getMessage().contains("密钥无效"));
+            Assertions.assertFalse(exception.getMessage().contains("wrong-key"));
+            Assertions.assertTrue(exception.getMessage().contains("***"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * 非法JSON和空模型列表都应返回明确业务异常。
+     *
+     * @throws IOException 本地测试服务创建失败时抛出
+     */
+    @Test
+    void shouldRejectInvalidOrEmptyModelResponses() throws IOException {
+        HttpServer invalidServer = startJsonServer(200, "not-json", exchange -> { });
+        try {
+            BusinessException invalidJson = Assertions.assertThrows(BusinessException.class,
+                    () -> new AiHttpClient().fetchChannelModels(baseUrl(invalidServer), "key", "openai").block());
+            Assertions.assertTrue(invalidJson.getMessage().contains("合法JSON"));
+        } finally {
+            invalidServer.stop(0);
+        }
+
+        HttpServer emptyServer = startJsonServer(200, "{\"data\":[]}", exchange -> { });
+        try {
+            BusinessException emptyModels = Assertions.assertThrows(BusinessException.class,
+                    () -> new AiHttpClient().fetchChannelModels(baseUrl(emptyServer), "key", "openai").block());
+            Assertions.assertTrue(emptyModels.getMessage().contains("没有返回可用模型"));
+        } finally {
+            emptyServer.stop(0);
+        }
+    }
+
+    /**
+     * 模型拉取应拒绝空字段、非法地址和不支持的调用格式。
+     */
+    @Test
+    void shouldValidateModelRefreshConfiguration() {
+        AiHttpClient client = new AiHttpClient();
+
+        Assertions.assertTrue(assertBusinessMessage(() -> client.fetchChannelModels("", "key", "openai").block()).contains("Base URL"));
+        Assertions.assertTrue(assertBusinessMessage(() -> client.fetchChannelModels("https://example.com/v1", "", "openai").block()).contains("API Key"));
+        Assertions.assertTrue(assertBusinessMessage(() -> client.fetchChannelModels("file:///tmp", "key", "openai").block()).contains("HTTP或HTTPS"));
+        Assertions.assertTrue(assertBusinessMessage(() -> client.fetchChannelModels("https://example.com", "key", "unknown").block()).contains("不支持"));
+    }
+
+    /**
+     * OpenAI兼容接口必须直接在配置的基础地址后拼接业务路径，不能主动增加版本路径。
+     */
+    @Test
+    void shouldAppendPathToConfiguredAiBaseUrl() {
+        Assertions.assertEquals("https://api.deepseek.com/chat/completions",
+                AiHttpClient.buildAiUrl("https://api.deepseek.com", "/chat/completions"));
+        Assertions.assertEquals("https://api.openai.com/v1/chat/completions",
+                AiHttpClient.buildAiUrl("https://api.openai.com/v1/", "/chat/completions"));
+    }
+
+    /**
+     * 应允许HTTP或HTTPS远程媒体地址。
+     */
+    @Test
+    void shouldAllowHttpAndHttpsRemoteMediaUrls() {
+        AiHttpClient client = new AiHttpClient();
+
+        Assertions.assertDoesNotThrow(() -> client.validateRemoteMediaUrl("http://127.0.0.1/media.png").block());
+        Assertions.assertDoesNotThrow(() -> client.validateRemoteMediaUrl("https://[::1]/media.png").block());
+    }
+
+    /**
+     * 应拒绝非HTTP(S)远程媒体地址。
+     */
+    @Test
+    void shouldRejectUnsupportedRemoteMediaProtocol() {
+        AiHttpClient client = new AiHttpClient();
+
+        BusinessException exception = Assertions.assertThrows(BusinessException.class,
+                () -> client.validateRemoteMediaUrl("file:///tmp/media.png").block());
+
+        Assertions.assertTrue(exception.getMessage().contains("HTTP或HTTPS"));
+    }
+
+    /**
+     * 明文http渠道不得发起h2c协议升级。
+     * <p>
+     * JDK HttpClient默认协商HTTP/2，对http://地址会发出
+     * {@code Connection: Upgrade, HTTP2-Settings} 与 {@code Upgrade: h2c}。
+     * uvicorn处理该组合时会丢失请求体，上游FastAPI随即返回
+     * {@code {"detail":[{"type":"missing","loc":["body"]}]}}，
+     * 表现为"提示词、时长都合法却被供应商拒绝"。此处必须锁定不发送升级头。
+     *
+     * @throws IOException 本地测试服务创建失败时抛出
+     */
+    @Test
+    void shouldNotNegotiateHttp2UpgradeOnPlaintextChannel() throws IOException {
+        AtomicReference<String> upgrade = new AtomicReference<>();
+        AtomicReference<String> connection = new AtomicReference<>();
+        HttpServer server = startJsonServer(200, "{\"detail\":\"ok\"}", exchange -> {
+            upgrade.set(exchange.getRequestHeaders().getFirst("Upgrade"));
+            connection.set(exchange.getRequestHeaders().getFirst("Connection"));
+        });
+        try {
+            AiTaskDtos.AiChannelConfig channel = new AiTaskDtos.AiChannelConfig(
+                    "channel-1", "测试渠道", baseUrl(server) + "/v1", "secret-key", "dola", List.of("seedance-2.0"));
+
+            new AiHttpClient().sendJsonRequest(channel, "POST", "/videos/generations",
+                    new java.util.LinkedHashMap<>(java.util.Map.of("model", "seedance-2.0"))).block();
+
+            Assertions.assertFalse("h2c".equalsIgnoreCase(upgrade.get()),
+                    "明文http渠道不得发送Upgrade: h2c，实际:" + upgrade.get());
+            Assertions.assertTrue(connection.get() == null || !connection.get().toLowerCase().contains("upgrade"),
+                    "明文http渠道不得在Connection中声明Upgrade，实际:" + connection.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * JSON请求必须保留显式DELETE方法，确保排队中的供应商任务能够取消。
+     *
+     * @throws IOException 本地测试服务创建失败时抛出
+     */
+    @Test
+    void shouldSendExplicitDeleteRequest() throws IOException {
+        AtomicReference<String> method = new AtomicReference<>();
+        HttpServer server = startJsonServer(200, "{}", exchange -> method.set(exchange.getRequestMethod()));
+        try {
+            AiTaskDtos.AiChannelConfig channel = new AiTaskDtos.AiChannelConfig(
+                    "channel-1", "测试渠道", baseUrl(server), "secret-key", "openai", List.of("model-1"));
+
+            new AiHttpClient().sendJsonRequest(channel, "DELETE", "/tasks/task-1", null).block();
+
+            Assertions.assertEquals("DELETE", method.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * JSON请求必须拒绝未支持的HTTP方法，不能静默降级为GET。
+     */
+    @Test
+    void shouldRejectUnsupportedJsonRequestMethod() {
+        AiTaskDtos.AiChannelConfig channel = new AiTaskDtos.AiChannelConfig(
+                "channel-1", "测试渠道", "https://example.com", "secret-key", "openai", List.of("model-1"));
+
+        BusinessException exception = Assertions.assertThrows(BusinessException.class,
+                () -> new AiHttpClient().sendJsonRequest(channel, "PATCH", "/tasks/task-1", null).block());
+
+        Assertions.assertTrue(exception.getMessage().contains("不支持HTTP方法"));
+    }
+
+    /**
+     * 创建返回固定JSON的本地HTTP测试服务。
+     *
+     * @param statusCode int HTTP响应状态码
+     * @param responseBody String HTTP响应内容
+     * @param requestObserver RequestObserver 请求观察器
+     * @return HttpServer 已启动的本地HTTP服务
+     * @throws IOException 本地服务创建失败时抛出
+     */
+    private HttpServer startJsonServer(int statusCode, String responseBody, RequestObserver requestObserver) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            requestObserver.accept(exchange);
+            byte[] body = responseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+            exchange.sendResponseHeaders(statusCode, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        return server;
+    }
+
+    /**
+     * 获取本地HTTP测试服务的基础地址。
+     *
+     * @param server HttpServer 本地HTTP服务
+     * @return String 基础地址
+     */
+    private String baseUrl(HttpServer server) {
+        return "http://127.0.0.1:" + server.getAddress().getPort();
+    }
+
+    /**
+     * 断言回调抛出业务异常并返回错误消息。
+     *
+     * @param executable ExecutableCallback 待执行回调
+     * @return String 业务异常消息
+     */
+    private String assertBusinessMessage(ExecutableCallback executable) {
+        return Assertions.assertThrows(BusinessException.class, executable::execute).getMessage();
+    }
+
+    /** 本地HTTP请求观察器。 */
+    @FunctionalInterface
+    private interface RequestObserver {
+
+        /**
+         * 观察收到的HTTP请求。
+         *
+         * @param exchange HttpExchange HTTP交换对象
+         */
+        void accept(HttpExchange exchange);
+    }
+
+    /** 可抛异常的测试回调。 */
+    @FunctionalInterface
+    private interface ExecutableCallback {
+
+        /**
+         * 执行测试回调。
+         */
+        void execute();
+    }
+}

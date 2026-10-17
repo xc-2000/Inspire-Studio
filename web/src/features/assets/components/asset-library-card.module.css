@@ -1,0 +1,64 @@
+.favoriteButton {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid rgb(255 255 255 / 85%);
+    border-radius: 11px;
+    background: rgb(255 255 255 / 94%);
+    color: #475569;
+    box-shadow: 0 2px 8px rgb(15 23 42 / 14%);
+    cursor: pointer;
+    transition:
+        background 160ms ease,
+        color 160ms ease,
+        border-color 160ms ease,
+        transform 160ms ease;
+}
+
+.favoriteButton > svg {
+    color: inherit;
+    fill: none;
+    flex-shrink: 0;
+}
+
+.favoriteButton:hover {
+    background: #fff8e6;
+    border-color: #f5d990;
+    color: #925b00;
+    transform: translateY(-1px);
+}
+
+.favoriteButton[aria-pressed="true"] {
+    background: #fff1c2;
+    border-color: #f3d47a;
+    color: #925b00;
+}
+
+.favoriteButton[aria-pressed="true"] > svg {
+    fill: #f5b82e;
+}
+
+.favoriteButton[aria-pressed="true"]:hover {
+    background: #ffe8a0;
+}
+
+.favoriteButton:active {
+    transform: scale(0.94);
+}
+
+.favoriteButton:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .favoriteButton {
+        transition: none;
+        transform: none;
+    }
+}

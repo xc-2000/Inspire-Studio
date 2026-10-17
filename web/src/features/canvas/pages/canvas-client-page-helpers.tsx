@@ -1,0 +1,530 @@
+"use client";
+
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { BookOpenText, ChevronRight, Clapperboard, GripVertical, ImageIcon, List, LoaderCircle, Video } from "lucide-react";
+import { listSkills, type SkillOption } from "@/services/api/server";
+import { ListPagination } from "@/shared/components/list-pagination";
+import { usePaginatedList } from "@/shared/hooks/use-paginated-list";
+
+import type { CanvasTheme, CanvasBackgroundMode } from "@/shared/lib/canvas-theme";
+import { useCanvasTheme } from "../components/canvas-theme-provider";
+import { readCanvasLastUsedGenerationSettings } from "../services/canvas-last-used-generation-settings";
+import { formatGroupedGenerationStyleMessage } from "@/features/generation/lib/style-command";
+import { createAudioNode, createBackgroundNode, createImageNode, createStoryboardNode, createTextNode, createVideoCompositionNode, createVideoNode, getCanvasNodeTemplate } from "../constants";
+import { applyCanvasNodeAttributes, isBackgroundNode, isImageNode, isStoryboardNode, isTextNode, isVideoCompositionNode, isVideoNode, updateCanvasNodeFrame, type CanvasNodeAttributes } from "../domain/canvas-node";
+import { MINIMUM_CONTENT_NODE_DIMENSION, nodeSizeFromRatioWithMinimum } from "../utils/canvas-node-size";
+import {
+    type CanvasAssistantMessage,
+    type CanvasAssistantSession,
+    type CanvasConnection,
+    type CanvasNode,
+    type CanvasNodeKind,
+    type ConnectionHandle,
+    type CanvasPoint,
+    type CanvasViewTransform,
+} from "../types";
+
+export type CanvasClipboard = {
+    nodes: CanvasNode[];
+    connections: CanvasConnection[];
+};
+
+export type PendingConnectionCreate = {
+    connection: ConnectionHandle;
+    position: CanvasPoint;
+    menuPosition?: CanvasPoint;
+};
+
+export type PendingConnectionCreateNodeType = CanvasNodeKind;
+
+export type ConnectionDropTarget = {
+    nodeId: string | null;
+    isNearNode: boolean;
+};
+
+export type EdgeDeletePopover = {
+    connectionId: string;
+    x: number;
+    y: number;
+};
+
+export type CanvasHistoryEntry = Pick<CanvasClipboard, "nodes" | "connections"> & {
+    chatSessions: CanvasAssistantSession[];
+    activeChatId: string | null;
+    backgroundMode: CanvasBackgroundMode;
+    showImageInfo: boolean;
+};
+
+const CONNECTION_CREATE_MENU_WIDTH = 252;
+const CONNECTION_CREATE_MENU_HEIGHT = 400;
+const AGENT_HISTORY_MESSAGE_LIMIT = 12;
+
+export function createCanvasNode(kind: CanvasNodeKind, position: CanvasPoint, attributes?: CanvasNodeAttributes): CanvasNode {
+    const template = getCanvasNodeTemplate(kind);
+    const configuredRatio = typeof attributes?.size === "string"
+        ? attributes.size
+        : kind === "image" ? attributes?.settingGraph?.aspectRatio : undefined;
+    const ratioSize = (kind === "text" || kind === "storyboard" || kind === "image") && configuredRatio
+        ? nodeSizeFromRatioWithMinimum(configuredRatio, template.width, template.height, kind === "image" ? 1 : MINIMUM_CONTENT_NODE_DIMENSION)
+        : null;
+    const frameSize = ratioSize || template;
+    const input = {
+        id: `${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        position: {
+            x: position.x - frameSize.width / 2,
+            y: position.y - frameSize.height / 2,
+        },
+    };
+    const node = kind === "audio" ? createAudioNode(input) : kind === "image"
+        ? createImageNode(input)
+        : kind === "video"
+            ? createVideoNode(input)
+            : kind === "storyboard"
+                ? createStoryboardNode(input)
+                : kind === "videoComposition"
+                    ? createVideoCompositionNode(input)
+                : kind === "background"
+                    ? createBackgroundNode(input)
+                    : createTextNode(input);
+    const withFrame = ratioSize ? updateCanvasNodeFrame(node, ratioSize) : node;
+    return applyCanvasNodeAttributes(withFrame, { ...readCanvasLastUsedGenerationSettings(kind), ...attributes });
+}
+
+export function buildAgentChatHistory(messages: CanvasAssistantMessage[]) {
+    return messages
+        .flatMap((item) => {
+            if (item.role !== "user" && item.role !== "assistant") return [];
+            const text = item.text.trim();
+            if (!text) return [];
+            const styleText = item.generationStyles?.length ? formatGroupedGenerationStyleMessage("", item.generationStyles).trim() : "";
+            const withStyles = styleText ? `${styleText}\n${text}` : text;
+            if (item.role === "assistant" || !item.references?.length) {
+                return [{ role: item.role, text: withStyles }];
+            }
+            const references = item.references.map((reference) => `- ${reference.title}：${reference.text || ""}`).join("\n");
+            return [{ role: item.role, text: `${withStyles}\n\n选中节点：\n${references}` }];
+        })
+        .slice(-AGENT_HISTORY_MESSAGE_LIMIT);
+}
+
+export function CanvasLoadingShell() {
+    const theme = useCanvasTheme();
+
+    return (
+        <main className="relative h-full min-h-0 overflow-hidden" style={{ background: theme.canvas.backgroundGradient, color: theme.node.faint }}>
+            <div
+                className="absolute inset-0 opacity-60"
+                style={{
+                    backgroundImage: `radial-gradient(circle, ${theme.canvas.dot} 1px, transparent 1px)`,
+                    backgroundSize: "28px 28px",
+                }}
+            />
+
+            <div className="absolute bottom-5 left-1/2 z-50 flex h-11 -translate-x-1/2 items-center gap-0.5 rounded-lg px-1" style={{ background: theme.toolbar.panel }} aria-hidden="true">
+                {Array.from({ length: 9 }).map((_, index) => (
+                    <div key={index} className="size-9 rounded-md bg-current opacity-10" />
+                ))}
+            </div>
+
+            <div className="absolute bottom-24 left-6 z-50 h-40 w-[240px] rounded-lg border shadow-xl backdrop-blur-sm" style={{ background: theme.node.panel, borderColor: theme.node.stroke }} aria-hidden="true">
+                <div className="absolute left-7 top-7 h-5 w-12 rounded-sm bg-current opacity-10" />
+                <div className="absolute left-28 top-16 h-6 w-16 rounded-sm bg-current opacity-10" />
+                <div className="absolute bottom-7 left-16 h-8 w-20 rounded-sm bg-current opacity-10" />
+                <div className="absolute inset-5 rounded border border-current opacity-15" />
+            </div>
+
+            <div className="absolute bottom-5 left-5 z-50 flex h-11 w-[260px] items-center gap-2 rounded-lg px-1" style={{ background: theme.toolbar.panel }} aria-hidden="true">
+                <div className="size-8 rounded-md bg-current opacity-10" />
+                <div className="size-8 rounded-md bg-current opacity-10" />
+                <div className="h-1 flex-1 rounded-full bg-current opacity-10" />
+                <div className="h-4 w-10 rounded bg-current opacity-10" />
+                <div className="size-8 rounded-md bg-current opacity-10" />
+            </div>
+        </main>
+    );
+}
+
+export function ConnectionCreateMenu({
+    pending,
+    sourceNode,
+    onPositionChange,
+    onCreate,
+    onCreateSettingGraph,
+    onClose,
+}: {
+    pending: PendingConnectionCreate;
+    sourceNode: CanvasNode | null;
+    onPositionChange: (position: CanvasPoint) => void;
+    onCreate: (type: PendingConnectionCreateNodeType) => void;
+    onCreateSettingGraph: (skill: SkillOption) => void;
+    onClose: () => void;
+}) {
+    const theme = useCanvasTheme();
+    const menuRef = useRef<HTMLDivElement>(null);
+    const dragRef = useRef<{ pointerId: number; startX: number; startY: number; position: CanvasPoint } | null>(null);
+    const menuPosition = pending.menuPosition ?? pending.position;
+
+    /** 将菜单限制在画布可见区域，保留标题栏可操作。 */
+    const moveMenu = (x: number, y: number) => {
+        const menu = menuRef.current;
+        const container = menu?.offsetParent;
+        if (!menu || !(container instanceof HTMLElement)) return;
+        onPositionChange({
+            x: Math.max(0, Math.min(x, container.clientWidth - menu.offsetWidth)),
+            y: Math.max(0, Math.min(y, container.clientHeight - menu.offsetHeight)),
+        });
+    };
+
+    return (
+        <div
+            ref={menuRef}
+            className="absolute z-[120] rounded-2xl border p-2 shadow-2xl"
+            data-connection-create-menu
+            style={{
+                left: menuPosition.x,
+                top: menuPosition.y,
+                width: CONNECTION_CREATE_MENU_WIDTH,
+                background: theme.node.panel,
+                borderColor: theme.node.stroke,
+                color: theme.node.text,
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+        >
+            <div className="mb-1.5 flex items-center justify-between px-1">
+                <button
+                    type="button"
+                    className="flex min-h-6 flex-1 cursor-grab touch-none select-none items-center gap-1.5 rounded text-left text-xs font-medium active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--studio-action)]"
+                    style={{ color: theme.node.muted }}
+                    aria-label="移动引用生成面板"
+                    title="拖动移动面板"
+                    onPointerDown={(event) => {
+                        if (event.button !== 0 || !event.isPrimary) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, position: menuPosition };
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                    }}
+                    onPointerMove={(event) => {
+                        const drag = dragRef.current;
+                        if (!drag || drag.pointerId !== event.pointerId) return;
+                        event.stopPropagation();
+                        moveMenu(drag.position.x + event.clientX - drag.startX, drag.position.y + event.clientY - drag.startY);
+                    }}
+                    onPointerUp={(event) => {
+                        if (dragRef.current?.pointerId !== event.pointerId) return;
+                        dragRef.current = null;
+                        event.currentTarget.releasePointerCapture(event.pointerId);
+                    }}
+                    onPointerCancel={() => { dragRef.current = null; }}
+                    onLostPointerCapture={() => { dragRef.current = null; }}
+                    onKeyDown={(event) => {
+                        const direction = ({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as Record<string, number[]>)[event.key];
+                        if (!direction) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        moveMenu(menuPosition.x + direction[0] * 10, menuPosition.y + direction[1] * 10);
+                    }}
+                >
+                    <GripVertical className="size-3.5 shrink-0" aria-hidden="true" />
+                    引用该节点生成
+                </button>
+                <button type="button" className="grid size-6 place-items-center rounded-lg text-sm opacity-55 transition hover:bg-black/5 hover:opacity-100" onClick={onClose} aria-label="关闭">
+                    ×
+                </button>
+            </div>
+            <div className="grid gap-1">
+                <ConnectionCreateOption theme={theme} icon={<List className="size-4" />} title="文本生成" description="脚本、广告词、品牌文案" onClick={() => onCreate("text")} />
+                <ConnectionCreateOption theme={theme} icon={<ImageIcon className="size-4" />} title="图片生成" onClick={() => onCreate("image")} />
+                <ConnectionCreateOption theme={theme} icon={<Video className="size-4" />} title="视频生成" onClick={() => onCreate("video")} />
+                <ConnectionCreateSettingGraphOption theme={theme} sourceNode={sourceNode} onSelect={onCreateSettingGraph} />
+                <ConnectionCreateOption
+                    theme={theme}
+                    icon={<Clapperboard className="size-4" />}
+                    title="合成视频"
+                    description={sourceNode && isVideoNode(sourceNode) ? "按拖拽顺序拼接多个视频" : "仅支持视频节点"}
+                    disabled={!sourceNode || !isVideoNode(sourceNode)}
+                    disabledReason="仅支持视频节点"
+                    onClick={() => onCreate("videoComposition")}
+                />
+                {sourceNode && isTextNode(sourceNode) ? <ConnectionCreateOption theme={theme} icon={<Clapperboard className="size-4" />} title="分镜脚本" description="根据剧本生成镜头和资产清单" onClick={() => onCreate("storyboard")} /> : null}
+            </div>
+        </div>
+    );
+}
+
+function ConnectionCreateSettingGraphOption({
+    theme,
+    sourceNode,
+    onSelect,
+}: {
+    theme: CanvasTheme;
+    sourceNode: CanvasNode | null;
+    onSelect: (skill: SkillOption) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [skills, setSkills] = useState<SkillOption[]>([]);
+    const [error, setError] = useState<string | null>(null);
+    const available = Boolean(sourceNode && (isTextNode(sourceNode) || isImageNode(sourceNode)));
+    const disabledReason = sourceNode ? settingGraphDisabledReason(sourceNode) : "设定图仅支持文本或图片节点";
+    const menuButtonRef = useRef<HTMLButtonElement>(null);
+    const skillButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
+    const [highlightedIndex, setHighlightedIndex] = useState(0);
+    const pagination = usePaginatedList(skills, 10);
+    const offset = (pagination.page - 1) * pagination.pageSize;
+    const skipFocusOpenRef = useRef(false);
+
+    useEffect(() => {
+        if (open && skills.length > 0) skillButtonRefs.current[highlightedIndex]?.focus();
+    }, [highlightedIndex, open, skills.length, pagination.page]);
+
+    const closeSubmenu = () => {
+        setOpen(false);
+        skipFocusOpenRef.current = true;
+        menuButtonRef.current?.focus();
+    };
+
+    const highlightSkill = (index: number) => {
+        setHighlightedIndex(index);
+        pagination.setPage(Math.floor(index / pagination.pageSize) + 1);
+    };
+
+    const load = async () => {
+        if (!available || loading || skills.length) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await listSkills("canvasSettingGraph");
+            setSkills(response.skills);
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : "设定图技能加载失败");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="relative" onMouseLeave={() => {
+            // 分页下拉框通过 portal 渲染，操作其中的选项时保持技能菜单打开。
+            if (!document.activeElement?.closest(".ant-pagination")) setOpen(false);
+        }}>
+            <button
+                type="button"
+                ref={menuButtonRef}
+                role="menuitem"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                disabled={!available}
+                className="flex h-12 w-full items-center gap-2 rounded-xl px-2 text-left transition disabled:cursor-not-allowed"
+                style={{ color: theme.node.text, opacity: available ? 1 : 0.45, background: open ? theme.node.fill : "transparent" }}
+                title={available ? "设定图" : disabledReason}
+                onMouseEnter={() => {
+                    setOpen(true);
+                    void load();
+                }}
+                onFocus={() => {
+                    if (skipFocusOpenRef.current) {
+                        skipFocusOpenRef.current = false;
+                        return;
+                    }
+                    setOpen(true);
+                    void load();
+                }}
+                onClick={() => {
+                    setOpen((value) => !value);
+                    void load();
+                }}
+                onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                        event.preventDefault();
+                        setOpen(false);
+                    } else if (event.key === "ArrowRight" || event.key === "Enter") {
+                        event.preventDefault();
+                        setOpen(true);
+                        void load();
+                        highlightSkill(0);
+                        window.setTimeout(() => skillButtonRefs.current[0]?.focus(), 0);
+                    }
+                }}
+            >
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: theme.node.fill, color: theme.node.muted }}>
+                    <BookOpenText className="size-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2 text-[13px] font-semibold leading-4">设定图</span>
+                    <span className="block truncate text-[11px] leading-4" style={{ color: theme.node.muted }}>
+                        角色与场景设计参考
+                    </span>
+                </span>
+                <ChevronRight className="size-4 shrink-0" aria-hidden="true" />
+            </button>
+            {open && available ? (
+                <div
+                    role="menu"
+                    aria-label="设定图类型"
+                    className="absolute left-full top-0 z-[130] flex max-h-[min(36rem,calc(100dvh-96px))] w-72 max-w-[calc(100vw-32px)] flex-col rounded-2xl border p-2 shadow-2xl"
+                    style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            closeSubmenu();
+                        }
+                    }}
+                >
+                    <div className="min-h-0 overflow-y-auto">
+                    {loading ? (
+                        <div className="flex h-24 items-center justify-center gap-2 text-xs" style={{ color: theme.node.muted }}>
+                            <LoaderCircle className="size-4 animate-spin" />
+                            加载设定图技能…
+                        </div>
+                    ) : error ? (
+                        <div className="px-3 py-4 text-xs" style={{ color: theme.node.muted }}>{error}</div>
+                    ) : skills.length ? pagination.items.map((skill, pageIndex) => {
+                        const index = offset + pageIndex;
+                        return (
+                        <button
+                            key={skill.id}
+                            ref={(element) => { skillButtonRefs.current[index] = element; }}
+                            type="button"
+                            role="menuitem"
+                            className="flex min-h-11 w-full items-center rounded-xl px-3 text-left text-sm transition hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2"
+                            style={{ color: theme.node.text }}
+                            onFocus={() => setHighlightedIndex(index)}
+                            aria-current={highlightedIndex === index ? "true" : undefined}
+                            onClick={() => onSelect(skill)}
+                            onKeyDown={(event) => {
+                                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                                    event.preventDefault();
+                                    const next = event.key === "ArrowDown" ? Math.min(index + 1, skills.length - 1) : Math.max(index - 1, 0);
+                                    highlightSkill(next);
+                                    skillButtonRefs.current[next]?.focus();
+                                } else if (event.key === "ArrowLeft" || event.key === "Escape") {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    closeSubmenu();
+                                }
+                            }}
+                        >
+                            <span className="min-w-0 truncate">{skill.name}</span>
+                        </button>
+                        );
+                    }) : <div className="px-3 py-4 text-xs" style={{ color: theme.node.muted }}>暂无可用设定图技能</div>}
+                    </div>
+                    {!loading && !error ? (
+                        <ListPagination compact className="shrink-0" label="设定图技能分页" current={pagination.page} pageSize={pagination.pageSize} total={pagination.total} pageSizeOptions={[10, 20, 50]} onChange={(page, size) => {
+                            pagination.onChange(page, size);
+                            setHighlightedIndex((page - 1) * size);
+                        }} />
+                    ) : null}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
+function ConnectionCreateOption({
+    theme,
+    icon,
+    title,
+    description,
+    onClick,
+    disabled = false,
+    disabledReason,
+}: {
+    theme: CanvasTheme;
+    icon: ReactNode;
+    title: string;
+    description?: string;
+    onClick?: () => void;
+    disabled?: boolean;
+    disabledReason?: string;
+}) {
+    return (
+        <button
+            type="button"
+            className="flex h-12 w-full items-center gap-2 rounded-xl px-2 text-left transition disabled:cursor-not-allowed"
+            style={{ color: theme.node.text, opacity: disabled ? 0.45 : 1 }}
+            disabled={disabled}
+            title={disabled ? disabledReason : title}
+            onClick={onClick}
+            onMouseEnter={(event) => {
+                if (!disabled) event.currentTarget.style.background = theme.node.fill;
+            }}
+            onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
+        >
+            <span className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: theme.node.fill, color: theme.node.muted }}>
+                {icon}
+            </span>
+            <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2 text-[13px] font-semibold leading-4">{title}</span>
+                {description ? (
+                    <span className="block truncate text-[11px] leading-4" style={{ color: theme.node.muted }}>
+                        {description}
+                    </span>
+                ) : null}
+            </span>
+        </button>
+    );
+}
+
+function settingGraphDisabledReason(sourceNode: CanvasNode): string {
+    if (isTextNode(sourceNode) || isImageNode(sourceNode)) return "";
+    if (isVideoNode(sourceNode)) return "视频节点暂不支持设定图";
+    if (isStoryboardNode(sourceNode)) return "分镜节点暂不支持设定图";
+    if (isBackgroundNode(sourceNode)) return "背景板节点暂不支持设定图";
+    if (isVideoCompositionNode(sourceNode)) return "合成视频节点暂不支持设定图";
+    return "当前节点类型暂不支持设定图";
+}
+
+export function PendingConnectionLine({
+    pending,
+    nodes,
+    viewport,
+}: {
+    pending: PendingConnectionCreate;
+    nodes: CanvasNode[];
+    viewport: CanvasViewTransform;
+}) {
+    const theme = useCanvasTheme();
+    const sourceNode = nodes.find((node) => node.id === pending.connection.nodeId);
+    if (!sourceNode) return null;
+
+    const sourceWorldX = pending.connection.handleType === "source" ? sourceNode.frame.position.x + sourceNode.frame.width : sourceNode.frame.position.x;
+    const sourceWorldY = sourceNode.frame.position.y + sourceNode.frame.height / 2;
+    const startX = viewport.x + sourceWorldX * viewport.k;
+    const startY = viewport.y + sourceWorldY * viewport.k;
+    const menuLeft = pending.menuPosition?.x ?? pending.position.x;
+    const menuTop = pending.menuPosition?.y ?? pending.position.y;
+    const menuRight = menuLeft + CONNECTION_CREATE_MENU_WIDTH;
+    const menuAnchorPadding = 18;
+    const endX = startX <= menuLeft + CONNECTION_CREATE_MENU_WIDTH / 2 ? menuLeft : menuRight;
+    const endY = Math.min(Math.max(startY, menuTop + menuAnchorPadding), menuTop + CONNECTION_CREATE_MENU_HEIGHT - menuAnchorPadding);
+    const direction = endX >= startX ? 1 : -1;
+    const distance = Math.abs(endX - startX);
+    const curvature = Math.max(distance * 0.45, 56);
+    const pathD = `M ${startX} ${startY} C ${startX + curvature * direction} ${startY}, ${endX - curvature * direction} ${endY}, ${endX} ${endY}`;
+
+    return (
+        <svg className="pointer-events-none absolute inset-0 z-[119] h-full w-full overflow-visible" aria-hidden="true">
+            <path d={pathD} stroke={theme.node.muted} strokeWidth="2.5" strokeDasharray="6 6" strokeLinecap="round" fill="none" opacity="0.9" />
+        </svg>
+    );
+}
+
+export function isHiddenBatchChild(node: CanvasNode, nodes: CanvasNode[], collapsingBatchIds?: Set<string>) {
+    const rootId = isImageNode(node) ? node.grouping.rootId : undefined;
+    if (!rootId) return false;
+    const root = nodes.find((item) => item.id === rootId);
+    if (root && collapsingBatchIds?.has(rootId)) return false;
+    return Boolean(root && isImageNode(root) && !root.grouping.expanded);
+}
+
+export function isHiddenBatchConnectionEndpoint(node: CanvasNode, nodes: CanvasNode[]) {
+    const rootId = isImageNode(node) ? node.grouping.rootId : undefined;
+    if (!rootId) return false;
+    const root = nodes.find((item) => item.id === rootId);
+    return Boolean(root && isImageNode(root) && !root.grouping.expanded);
+}

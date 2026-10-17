@@ -1,0 +1,57 @@
+package com.inspirestudio.ai;
+
+import com.inspirestudio.ai.provider.AgnesProviderAdapter;
+import java.lang.reflect.Method;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
+/**
+ * 验证 Agnes 视频参考图片与关键帧请求参数。
+ *
+ * @date     2026-08-10 18:00
+ */
+class AgnesVideoReferenceTest {
+
+    /**
+     * 无图、单图和多张参考图应生成对应请求参数。
+     *
+     * @throws ReflectiveOperationException 反射调用请求参数构建方法失败时抛出
+     */
+    @Test
+    void shouldBuildAgnesVideoReferencePayloadByImageCount() throws ReflectiveOperationException {
+        Map<String, Object> noImagePayload = applyReferenceImages(List.of());
+        Map<String, Object> singleImagePayload = applyReferenceImages(List.of("https://example.com/one.png"));
+        Map<String, Object> twoImagePayload = applyReferenceImages(List.of("https://example.com/first.png", "https://example.com/second.png"));
+        Map<String, Object> threeImagePayload = applyReferenceImages(List.of("https://example.com/first.png", "https://example.com/second.png", "https://example.com/third.png"));
+        Map<String, Object> fourImagePayload = applyReferenceImages(List.of("https://example.com/1.png", "https://example.com/2.png", "https://example.com/3.png", "https://example.com/4.png"));
+
+        Assertions.assertFalse(noImagePayload.containsKey("images"));
+        Assertions.assertFalse(noImagePayload.containsKey("extra_body"));
+        Assertions.assertEquals(List.of("https://example.com/one.png"), singleImagePayload.get("images"));
+        Assertions.assertFalse(singleImagePayload.containsKey("extra_body"));
+        Assertions.assertEquals(List.of("https://example.com/first.png", "https://example.com/second.png"), twoImagePayload.get("images"));
+        Assertions.assertFalse(twoImagePayload.containsKey("extra_body"));
+        Assertions.assertEquals(List.of("https://example.com/first.png", "https://example.com/second.png", "https://example.com/third.png"), threeImagePayload.get("images"));
+        Assertions.assertFalse(threeImagePayload.containsKey("extra_body"));
+        Assertions.assertEquals(List.of("https://example.com/1.png", "https://example.com/2.png", "https://example.com/3.png", "https://example.com/4.png"), fourImagePayload.get("images"));
+        Assertions.assertFalse(fourImagePayload.containsKey("extra_body"));
+    }
+
+    /**
+     * 反射调用 Agnes 视频参考图片请求参数构建方法。
+     *
+     * @param referenceUrls List<String> 参考图片公网地址
+     * @return Map<String, Object> 已写入参考图片参数的请求载荷
+     * @throws ReflectiveOperationException 反射调用请求参数构建方法失败时抛出
+     */
+    private Map<String, Object> applyReferenceImages(List<String> referenceUrls) throws ReflectiveOperationException {
+        Method method = AgnesProviderAdapter.class.getDeclaredMethod("applyAgnesVideoReferenceImages", Map.class, List.class);
+        method.setAccessible(true);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        method.invoke(null, payload, referenceUrls);
+        return payload;
+    }
+}
