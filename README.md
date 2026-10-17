@@ -64,6 +64,15 @@ node --test newapi/plugins/*.test.mjs
 
 部分历史导入脚本需要额外的、由部署者自行提供的素材源；仓库不附带这些导入数据。不要提交运行时生成的 `newapi/generated/`、`outputs/` 或 `.env`。`.gitignore` 已覆盖常见运行数据与密钥文件。
 
-## 许可证与来源
+## 许可证
 
-保留上游项目的 [AGPL-3.0 许可证](LICENSE)。第三方适配组件和资源遵循各自的许可证；详见 `server/src/main/resources/licenses/`、`publisher-service/vendor/`、`third-party/image-prompt-reverse/` 及 `web/public/homepage/entries/CREDITS.md`。
+本项目采用 **GNU AGPLv3 的网络服务源码公开要求**。本项目原创且有权授权的代码以 [AGPL-3.0-only](LICENSE) 发布；沿用的 GPLv3 上游代码及其派生修改继续遵循 [GPLv3](LICENSES/GPL-3.0.txt)。二者依各自第 13 条组合使用，具体范围见 [许可及来源说明](NOTICE.md)。
+
+- **修改后对外提供在线服务**：对于受 AGPLv3 覆盖的修改版，必须显著地向所有远程交互用户提供免费获取对应源码的机会；源码包括与其组合的 GPLv3 部分及必要的构建、安装脚本。
+- **分发程序或修改版**：按对应许可证保留版权和许可声明、标注修改，并履行源码提供义务；不得给接收者附加与许可证冲突的限制。
+- **私下修改、自用**：不因修改行为本身而要求向全社会公开源码；允许商业使用，商业使用也须遵守相同条款。
+- **源码不等于业务数据**：无需公开用户数据、数据库内容、API 密钥、Cookie 或私钥。提交可配置的源码和配置模板即可，不应把运行凭证打包进去。
+
+部署者应提供实际运行版本的源码下载入口；用户无权访问的私有仓库链接不能替代该入口。以上为说明，准确权利义务以许可证全文为准。
+
+第三方适配组件、字体和配图保留各自许可证，详见 `server/src/main/resources/licenses/`、`publisher-service/vendor/`、`third-party/image-prompt-reverse/`、画布 Agent 中的许可文件及 `web/public/homepage/entries/CREDITS.md`。
