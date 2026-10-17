@@ -10,7 +10,10 @@ import unittest
 from unittest.mock import Mock, patch
 from flask import Flask
 
-SOURCE=pathlib.Path(os.environ.get('ARCADS_API_SOURCE','D:/deepseekP/openai_api.py'))
+source_path=os.environ.get('ARCADS_API_SOURCE')
+if not source_path:
+    raise SystemExit('Set ARCADS_API_SOURCE to the Arcads OpenAI API source file before running this test.')
+SOURCE=pathlib.Path(source_path)
 CORE=pathlib.Path(os.environ.get('ARCADS_CORE_SOURCE',str(SOURCE.with_name('arcads_web.py'))))
 
 class VideoResolutionTests(unittest.TestCase):

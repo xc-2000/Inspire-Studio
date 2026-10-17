@@ -1,5 +1,5 @@
 // Arcads OpenAI bridge. Installed in New API; Studio keeps its unified protocol.
-// Source contract: D:/deepseekP/OPENAI_API.md and openai_api.py.
+// Source contract: OPENAI_API.md and openai_api.py.
 export const meta = {
     apiVersion: 1, key: 'studio-arcads', name: 'Arcads 视频', version: '1.0.0',
     author: { name: 'Inspire Studio' }, fetchMode: 'per_task', protocols: ['openai_video'],

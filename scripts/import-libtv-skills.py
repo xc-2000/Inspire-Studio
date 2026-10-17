@@ -1,6 +1,6 @@
 """Build a one-time Flyway seed from a local LibTV export; never execute its assets.
 
-Usage: python scripts/import-libtv-skills.py D:/deepseekP/libtv-skills
+Usage: python scripts/import-libtv-skills.py <libtv-export-directory>
 The output is immutable once generated. Existing skills are not updated.
 """
 import collections
