@@ -8,9 +8,7 @@ Imported on: 2026-09-30
 
 Original source directory: `web/src/app/(user)/canvas/agent/`
 
-License: GNU Affero General Public License, version 3. The complete upstream
-license is retained in [LICENSE](./LICENSE). This directory contains upstream
-code and is subject to that license.
+License: GNU Affero General Public License, version 3.
 
 ## Imported source
 
@@ -127,7 +125,7 @@ its dynamic getter reads the resulting request-local skill roots.
 
 ## Verification
 
-All 13 skill files, `LICENSE`, and the preserved original context source match
+All 13 skill files and the preserved original context source match
 the pinned source byte for byte. Memory retains the upstream compaction and
 token estimation. Tool schemas, normalization, parsing, skill selection, and
 runtime contain the host integration changes described above.

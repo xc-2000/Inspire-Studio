@@ -11,7 +11,6 @@ The following files are verbatim copies from the pinned upstream commit:
 
 - `SKILL.md`
 - `README.md`
-- `LICENSE`
 - `agents/openai.yaml`
 - `references/analysis-framework.md`
 - `references/category-guides.md`

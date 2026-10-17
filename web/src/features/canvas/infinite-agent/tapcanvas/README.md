@@ -2,7 +2,7 @@
 
 Upstream: https://github.com/anymouschina/TapCanvas
 Revision: `a88ef8716780ccd70390237af85d71f9ca877c1e` (2026-10-08 retrieval).
-License: MIT, copyright (c) 2025 Beq; see LICENSE.
+License: MIT, copyright (c) 2025 Beq.
 
 The files in this directory are copied verbatim from upstream `packages/schemas/`:
 
