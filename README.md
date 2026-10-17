@@ -11,7 +11,8 @@ AI 图片、视频、画布 Agent、电商创作与多平台发布工作台。
 - `newapi/`：New API 视频适配插件和媒体上传辅助服务。
 - `publisher-service/`：多平台发布服务和相关第三方适配代码。
 - `scripts/`、`nginx/`、Docker Compose：配置和部署工具。
-<img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/585b54db-0ee4-4748-9a31-069b6e30726f" />
+<img width="1909" height="942" alt="image" src="https://github.com/user-attachments/assets/d68c4004-227f-49ab-a264-282d42626e51" />
+
 <img width="1906" height="932" alt="image" src="https://github.com/user-attachments/assets/0d6dce2a-9953-4807-bb87-33860fce60b0" />
 <img width="1912" height="947" alt="image" src="https://github.com/user-attachments/assets/7b4eca8a-5da0-4de0-b32b-13ef1805d027" />
 <img width="1892" height="476" alt="image" src="https://github.com/user-attachments/assets/24b1ad62-83eb-4595-8f66-067bc810c83a" />
