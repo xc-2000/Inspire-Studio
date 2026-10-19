@@ -64,7 +64,7 @@ node --test newapi/plugins/*.test.mjs
 ```
 
 部分历史导入脚本需要额外的、由部署者自行提供的素材源；仓库不附带这些导入数据。不要提交运行时生成的 `newapi/generated/`、`outputs/` 或 `.env`。`.gitignore` 已覆盖常见运行数据与密钥文件。
-## 联系作者/提需求
+## 交流群
 QQ群1105248585
 ## 许可
 
